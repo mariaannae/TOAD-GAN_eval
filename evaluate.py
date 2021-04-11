@@ -7,10 +7,7 @@ def platform_test(path_to_level_txt):
         for line in f:
             n_lines+=1
             ascii_levels.append(line)
-    
-    for lev in ascii_levels[-2:]:
-        print(lev)
-    
+
     if ascii_levels[-1] != ascii_levels[-2]:
         is_valid = False
 
