@@ -1,4 +1,13 @@
-def platform_test(path_to_level_txt):
+
+def platform_test_vec(vec):
+    platform1 = vec[:,:,-1,:]
+    platform2 = vec[:,:,-2,:]
+    mismatch = (platform1 != platform2).sum()
+    if mismatch > 0:
+        return 0
+    else: return 1
+
+def platform_test_file(path_to_level_txt):
     n_lines = 0
     is_valid = True
     ascii_levels = []
@@ -13,4 +22,3 @@ def platform_test(path_to_level_txt):
 
     return is_valid
 
-print(platform_test('./input/lvl_1-1.txt'))
