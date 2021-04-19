@@ -25,7 +25,6 @@ from generate_noise import generate_spatial_noise
 from generate_samples_cmaes import generate_samples_cmaes
 from models import load_trained_pyramid
 from generate_samples_cmaes import generate_samples_cmaes
-from generate_noise_vector import generate_noise_vector
 
 
 import numpy as np
@@ -37,6 +36,7 @@ from ribs.optimizers import Optimizer
 import ribs.visualize
 
 from evaluate import platform_test_vec
+from random_network import create_random_network
 
 
 
@@ -55,7 +55,7 @@ if __name__ == '__main__':
     parse.add_argument("--seed_mariokart_road", action="store_true", help="seed mariokart generators with a road image", default=False)
     parse.add_argument("--token_insert_experiment", action="store_true", help="make token insert experiment (experimental!)", default=False)
     opt = parse.parse_args()
-    #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if (not opt.out_) and (not opt.make_mario_samples):
             parse.error('--out_ is required (--make_mario_samples experiment is the exception)')
@@ -154,12 +154,12 @@ if __name__ == '__main__':
         s_dir_name = "%s_random_samples_v%.5f_h%.5f_st%d" % (prefix, opt.scale_v, opt.scale_h, opt.gen_start_scale)
 
     # archive, emitter, and optimizer for cma-es
-    testSize = 10
+    n_features = 10 #number of input features for the noise vector generator
     batch_size = 4
-    archive = GridArchive([5]*10, [(-0.1, 0.1)]*10)
+    archive = GridArchive([5]*n_features, [(-0.1, 0.1)]*n_features)
     emitters = [OptimizingEmitter(
         archive,
-        np.zeros(testSize),
+        np.zeros(n_features),
         0.01,
         batch_size=batch_size,
     )]
@@ -172,18 +172,25 @@ if __name__ == '__main__':
         solutions = optimizer.ask()
         solutions =(torch.from_numpy(solutions).float()).to(opt.device)
 
+        #get the vector size needed for the generator
+        vec_size = 0
+        n_pad = int(1*opt.num_layer)
+
+        for noise_map in noise_maps:
+            nzx = int(round((noise_map.shape[-2] - n_pad * 2) * opt.scale_v))
+            nzy = int(round((noise_map.shape[-1] - n_pad * 2) * opt.scale_h))
+            vec_size += 12*nzx*nzy*opt.num_samples
+
+        #create the noise generator
+        rand_network = create_random_network(solutions[0].shape[0], vec_size, opt.device).to(opt.device)
+
+        #generate levels from each solution
         generated_levels = []
         for i in range(batch_size):
-            #get the vector size needed for the generator
-            vec_size = 0
-            n_pad = int(1*opt.num_layer)
 
-            for noise_map in noise_maps:
-                nzx = int(round((noise_map.shape[-2] - n_pad * 2) * opt.scale_v))
-                nzy = int(round((noise_map.shape[-1] - n_pad * 2) * opt.scale_h))
-                vec_size += 12*nzx*nzy*opt.num_samples
-            noise_vector = generate_noise_vector(solutions[i], vec_size, opt.device)
-            
+            #generate noise using the random network:
+            noise_vector = rand_network(solutions[i])
+
             #generate levels and store them
             levels = generate_samples_cmaes(generators, noise_maps, reals, noise_amplitudes, noise_vector, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples)
             generated_levels.append(levels)
