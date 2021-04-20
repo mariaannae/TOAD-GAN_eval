@@ -31,8 +31,11 @@ import torch
 from cma.evolution_strategy import CMAEvolutionStrategy
 import cma
 
+
 from evaluate import platform_test_vec
 from random_network import create_random_network
+import matplotlib
+matplotlib.use('Agg')
 
 #define the fitness function:
 def fit_func(solution, device, generators, num_layer, vec_size, reals, noise_amplitudes, opt, in_s, scale_v, scale_h, save_dir, num_samples):
@@ -49,13 +52,13 @@ def fit_func(solution, device, generators, num_layer, vec_size, reals, noise_amp
     for level in levels:
         score = 0
         for level in levels:
-            score += platform_test_vec(level)
+            score += platform_test_vec(level, opt.token_list)
     score = float(score)/float(len(levels))
 
     return score
 
 if __name__ == '__main__':
-    # NOTICE: The "output" dir is where the generator is located as with main.py, even though it is the "input" here
+     # NOTICE: The "output" dir is where the generator is located as with main.py, even though it is the "input" here
 
     # Parse arguments
     parse = get_arguments()
@@ -172,14 +175,15 @@ if __name__ == '__main__':
 #cma-es implementation
 
     cma_opts = cma.CMAOptions()
-    cma_opts.set('timeout', 5*60) #set timeout in seconds
-    cma_opts.set('tolflatfitness', 10)
-    n_features = 100 #number of input features for the noise vector generator. other tolerance options available.
+    cma_opts.set('timeout', 5) #set timeout in seconds
+    
+    n_features = 10 #number of input features for the noise vector generator. other tolerance options available.
 
     #get the size of the noise map that TOAD-GAN will need
     vec_size = 0
     n_pad = int(1*opt.num_layer)
     for noise_map in noise_maps:
+        print(noise_map.shape)
         nzx = int(round((noise_map.shape[-2] - n_pad * 2) * opt.scale_v))
         nzy = int(round((noise_map.shape[-1] - n_pad * 2) * opt.scale_h))
         vec_size += 12*nzx*nzy*opt.num_samples
@@ -187,9 +191,10 @@ if __name__ == '__main__':
 
     #initialize cma-es
     #TODO:revisit sigma
-    es = CMAEvolutionStrategy([0]*n_features, sigma0 = 1)
+    es = CMAEvolutionStrategy(torch.randn(n_features), sigma0 = .5)
 
-    cma_opts.set('timeout', 5*60) #set timeout in seconds
+    ctr = 0
+    n_iter = 3
     while not es.stop():
         solutions = es.ask()
 
@@ -201,5 +206,10 @@ if __name__ == '__main__':
 
         es.tell(solutions, objectives)
         es.logger.add()
+        es.result_pretty()
+        #cma.plot()
         es.disp()
+        
+        ctr += 1
+
    
