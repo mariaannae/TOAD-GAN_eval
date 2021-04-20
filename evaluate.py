@@ -2,10 +2,11 @@
 def platform_test_vec(vec):
     platform1 = vec[:,:,-1,:]
     platform2 = vec[:,:,-2,:]
-    mismatch = (platform1 != platform2).sum()
+    mismatch = (abs(platform1-platform2)>.05).sum()
+    #need to render them
     if mismatch > 0:
-        return 0
-    else: return 1
+        return 1
+    else: return 0
 
 def platform_test_file(path_to_level_txt):
     n_lines = 0
