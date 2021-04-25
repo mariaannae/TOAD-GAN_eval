@@ -137,12 +137,12 @@ def train_single_scale(D, G, reals, generators, noise_maps, input_from_prev_scal
             gradient_penalty.backward(retain_graph=False)
 
             # Logging:
-            if step % 10 == 0:
-                wandb.log({f"D(G(z))@{current_scale}": errD_fake.item(),
-                           f"D(x)@{current_scale}": -errD_real.item(),
-                           f"gradient_penalty@{current_scale}": gradient_penalty.item()
-                           },
-                          step=step, sync=False)
+#            if step % 10 == 0:
+#                wandb.log({f"D(G(z))@{current_scale}": errD_fake.item(),
+#                           f"D(x)@{current_scale}": -errD_real.item(),
+#                           f"gradient_penalty@{current_scale}": gradient_penalty.item()
+#                           },
+#                          step=step, sync=False)
             optimizerD.step()
 
         ############################
@@ -169,10 +169,10 @@ def train_single_scale(D, G, reals, generators, noise_maps, input_from_prev_scal
             optimizerG.step()
 
         # More Logging:
-        if step % 10 == 0:
-            wandb.log({f"noise_amplitude@{current_scale}": opt.noise_amp,
-                       f"rec_loss@{current_scale}": rec_loss.item()},
-                      step=step, sync=False, commit=True)
+#        if step % 10 == 0:
+#            wandb.log({f"noise_amplitude@{current_scale}": opt.noise_amp,
+#                       f"rec_loss@{current_scale}": rec_loss.item()},
+#                      step=step, sync=False, commit=True)
 
         # Rendering and logging images of levels
         if epoch % 500 == 0 or epoch == (opt.niter - 1):
@@ -187,15 +187,15 @@ def train_single_scale(D, G, reals, generators, noise_maps, input_from_prev_scal
                 token_list))
             real_scaled = one_hot_to_ascii_level(real.detach(), token_list)
             img3 = opt.ImgGen.render(real_scaled)
-            wandb.log({f"G(z)@{current_scale}": wandb.Image(img),
-                       f"G(z_opt)@{current_scale}": wandb.Image(img2),
-                       f"real@{current_scale}": wandb.Image(img3)},
-                      sync=False, commit=False)
+#            wandb.log({f"G(z)@{current_scale}": wandb.Image(img),
+#                       f"G(z_opt)@{current_scale}": wandb.Image(img2),
+#                       f"real@{current_scale}": wandb.Image(img3)},
+#                      sync=False, commit=False)
 
-            real_scaled_path = os.path.join(wandb.run.dir, f"real@{current_scale}.txt")
-            with open(real_scaled_path, "w") as f:
-                f.writelines(real_scaled)
-            wandb.save(real_scaled_path)
+#            real_scaled_path = os.path.join(wandb.run.dir, f"real@{current_scale}.txt")
+#            with open(real_scaled_path, "w") as f:
+#                f.writelines(real_scaled)
+#            wandb.save(real_scaled_path)
 
         # Learning Rate scheduler step
         schedulerD.step()
@@ -204,5 +204,5 @@ def train_single_scale(D, G, reals, generators, noise_maps, input_from_prev_scal
     # Save networks
     torch.save(z_opt, "%s/z_opt.pth" % opt.outf)
     save_networks(G, D, z_opt, opt)
-    wandb.save(opt.outf)
+#    wandb.save(opt.outf)
     return z_opt, input_from_prev_scale, G

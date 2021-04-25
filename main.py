@@ -23,6 +23,8 @@ def get_tags(opt):
 def main():
     """ Main Training funtion. Parses inputs, inits logger, trains, and then generates some samples. """
 
+    render_mario = True
+
     # torch.autograd.set_detect_anomaly(True)
 
     # Logger init
@@ -37,10 +39,9 @@ def main():
     opt = get_arguments().parse_args()
     opt = post_config(opt)
 
-    # Init wandb
-    run = wandb.init(project="mario", tags=get_tags(opt),
-                     config=opt, dir=opt.out)
-    opt.out_ = run.dir
+#    run = wandb.init(project="mario", tags=get_tags(opt),
+#                     config=opt, dir=opt.out)
+#    opt.out_ = run.dir
 
     # Init game specific inputs
     replace_tokens = {}
@@ -65,8 +66,7 @@ def main():
     # Generate Samples of same size as level
     logger.info("Finished training! Generating random samples...")
     in_s = None
-    generate_samples(generators, noise_maps, reals,
-                     noise_amplitudes, opt, in_s=in_s)
+    generate_samples(generators, noise_maps, reals, noise_amplitudes, opt, render_mario, in_s=in_s)
 
     # Generate samples of smaller size than level
     logger.info("Generating arbitrary sized random samples...")
@@ -76,8 +76,8 @@ def main():
     real_down = real_down[0]
     # necessary for correct input shape
     in_s = torch.zeros(real_down.shape, device=opt.device)
-    generate_samples(generators, noise_maps, reals, noise_amplitudes, opt, in_s=in_s,
-                     scale_v=scale_v, scale_h=scale_h, save_dir="arbitrary_random_samples")
+    generate_samples(generators, noise_maps, reals, noise_amplitudes, opt, render_mario, in_s=in_s,
+                     scale_v=scale_v, scale_h=scale_h, save_dir="arbitrary_random_samples",)
 
 
 if __name__ == "__main__":

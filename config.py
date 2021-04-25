@@ -13,7 +13,8 @@ def get_arguments():
     parser.add_argument("--game", default="mario", help="Which game is to be used?")
 
     # workspace:
-    parser.add_argument("--not_cuda", action="store_true", help="disables cuda", default=0)
+    # parser.add_argument("--not_cuda", action="store_true", help="disables cuda", default=0)
+    parser.add_argument("--not_cuda", action="store_true", help="disables cuda", default=1)
 
     # load, input, save configurations:
     parser.add_argument("--netG", default="", help="path to netG (to continue training)")
