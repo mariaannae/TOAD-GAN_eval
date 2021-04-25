@@ -23,8 +23,14 @@ from mario.special_mario_downsampling import special_mario_downsampling
 from generate_noise import generate_spatial_noise
 from models import load_trained_pyramid
 
+from utils import load_level, play_level
+from py4j.java_gateway import JavaGateway
+from tkinter import *
 
-def generate_samples(generators, noise_maps, reals, noise_amplitudes, opt, in_s=None, scale_v=1.0, scale_h=1.0,
+# Path to the AI Framework jar for Playing levels
+MARIO_AI_PATH = os.path.abspath(os.path.join(os.path.curdir, "Mario-AI-Framework/mario-1.0-SNAPSHOT.jar"))
+
+def generate_samples(generators, noise_maps, reals, noise_amplitudes, opt, render_mario=True, in_s=None, scale_v=1.0, scale_h=1.0,
                      current_scale=0, gen_start_scale=0, num_samples=50, render_images=True, save_tensors=False,
                      save_dir="random_samples"):
     """
@@ -49,6 +55,15 @@ def generate_samples(generators, noise_maps, reals, noise_amplitudes, opt, in_s=
     else:
         token_groups = []
         NameError("name of --game not recognized. Supported: mario, mariokart")
+
+    # Py4j Java bridge uses Mario AI Framework
+    gateway = JavaGateway.launch_gateway(classpath=MARIO_AI_PATH, die_on_exit=True, redirect_stdout=sys.stdout,
+                                         redirect_stderr=sys.stderr)
+    # Open up game window and assign agent
+    game = gateway.jvm.engine.core.MarioGame()
+    game.initVisuals(2.0)
+    agent = gateway.jvm.agents.robinBaumgarten.Agent()
+    game.setAgent(agent)
 
     # Main sampling loop
     for G, Z_opt, noise_amp in zip(generators, noise_maps, noise_amplitudes):
@@ -164,6 +179,7 @@ def generate_samples(generators, noise_maps, reals, noise_amplitudes, opt, in_s=
                     if save_tensors:
                         os.makedirs("%s/torch" % dir2save, exist_ok=True)
                     os.makedirs("%s/txt" % dir2save, exist_ok=True)
+                    os.makedirs("%s/z" % dir2save, exist_ok=True) # For z
                 except OSError:
                     pass
 
@@ -178,6 +194,16 @@ def generate_samples(generators, noise_maps, reals, noise_amplitudes, opt, in_s=
                 # Save level txt
                 with open("%s/txt/%d_sc%d.txt" % (dir2save, n, current_scale), "w") as f:
                     f.writelines(level)
+
+                # Save the z
+                # with open("%s/z/%d_sc%d.txt" % (dir2save, n, current_scale), "w") as fz:
+                    # fz.writelines(z_curr)
+
+                # Play the level
+                level_obj = load_level("%s/txt/%d_sc%d.txt" % (dir2save, n, current_scale))
+                perc = play_level(level_obj, game, gateway, render_mario)
+                print(perc)
+                print()
 
                 # Save torch tensor
                 if save_tensors:
