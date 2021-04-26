@@ -49,10 +49,9 @@ def fit_func(solution, device, generators, num_layer, vec_size, reals, noise_amp
     levels = generate_samples_cmaes(generators, noise_maps, reals, noise_amplitudes, noise_vector, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples)
         
     #evaluate levels (using placeholder metric of platform solidity)
+    score = 0
     for level in levels:
-        score = 0
-        for level in levels:
-            score += platform_test_vec(level, opt.token_list)
+        score += platform_test_vec(level, opt.token_list)
     score = float(score)/float(len(levels))
 
     return score
