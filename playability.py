@@ -82,8 +82,7 @@ def test_playability(vec, token_list):
 
     # Play the level
     perc = play_level(level_obj, game, gateway, render_mario)
-    print(perc)
-    print()
+    return perc
 
 
 

@@ -60,9 +60,10 @@ def fit_func(solution, device, generators, num_layer, vec_size, reals, noise_amp
 
     return score
     '''
-    for level in levels: 
-        test_playability(level, opt.token_list)
-
+    score = 0
+    for level in levels:
+        score += 100 - test_playability(level, opt.token_list)
+    return score
 
 if __name__ == '__main__':
      # NOTICE: The "output" dir is where the generator is located as with main.py, even though it is the "input" here
