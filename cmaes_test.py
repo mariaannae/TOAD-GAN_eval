@@ -37,6 +37,8 @@ from random_network import create_random_network
 import matplotlib
 matplotlib.use('Agg')
 
+from playability import test_playability
+
 #define the fitness function:
 def fit_func(solution, device, generators, num_layer, vec_size, reals, noise_amplitudes, opt, in_s, scale_v, scale_h, save_dir, num_samples):
 
@@ -47,7 +49,8 @@ def fit_func(solution, device, generators, num_layer, vec_size, reals, noise_amp
 
     #generate levels
     levels = generate_samples_cmaes(generators, noise_maps, reals, noise_amplitudes, noise_vector, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples)
-        
+
+    '''    
     #evaluate levels (using placeholder metric of platform solidity)
     for level in levels:
         score = 0
@@ -56,6 +59,10 @@ def fit_func(solution, device, generators, num_layer, vec_size, reals, noise_amp
     score = float(score)/float(len(levels))
 
     return score
+    '''
+    for level in levels: 
+        test_playability(level, opt.token_list)
+
 
 if __name__ == '__main__':
      # NOTICE: The "output" dir is where the generator is located as with main.py, even though it is the "input" here
