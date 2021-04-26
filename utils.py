@@ -48,6 +48,7 @@ class LevelObject:
 
 
 def load_level(fname):
+    '''
     level_l = IntVar()
     level_h = IntVar()
     level_l.set(0)
@@ -64,6 +65,7 @@ def load_level(fname):
     level_obj = LevelObject('-', None, levelimage, ['-'], None, None)
     is_loaded = BooleanVar()
     is_loaded.set(False)
+    '''
 
     # fname = fd.askopenfilename(title='Load Level', initialdir=os.curdir, filetypes=[("level .txt files", "*.txt")])
     if len(fname) == 0:
@@ -114,12 +116,16 @@ def load_level(fname):
 
 
 def play_level(level_obj, game, gateway, render_mario):
+    
     error_msg = StringVar()
     error_msg.set("No Errors")
+    '''
     use_gen = BooleanVar()
     use_gen.set(False)
+    '''
     is_loaded = BooleanVar()
     is_loaded.set(False)
+    
     # error_msg.set("Playing level...")
     # is_loaded.set(False)
     # remember_use_gen = use_gen.get()
