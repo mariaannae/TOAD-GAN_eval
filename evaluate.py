@@ -27,3 +27,15 @@ def platform_test_file(path_to_level_txt):
 
     return is_valid
 
+def num_jumps(vec, token_list):
+    num_jumps = 0
+    ascii_level = one_hot_to_ascii_level(vec.detach(), token_list)
+    merged_level = ""
+    for i in range(len(ascii_level[-1])):
+        if ascii_level[-1][i] == "X" or ascii_level[-2][i] == "X":
+            merged_level += "X"
+        else:
+            merged_level += " "
+    
+    platforms = merged_level.split()
+    return len(platforms)-1

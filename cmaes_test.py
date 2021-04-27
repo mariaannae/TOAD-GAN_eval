@@ -35,7 +35,7 @@ import cma
 from evaluate import platform_test_vec
 from random_network import create_random_network
 import matplotlib
-matplotlib.use('Agg')
+
 
 from mario.level_image_gen import LevelImageGen
 from utils import LevelObject
@@ -60,20 +60,12 @@ def fit_func(solution, device, generators, num_layer, vec_size, reals, noise_amp
     #generate levels
     levels = generate_samples_cmaes(generators, noise_maps, reals, noise_amplitudes, noise_vector, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples)
 
-    '''    
-    #evaluate levels (using placeholder metric of platform solidity)
+    score = 0.0
     for level in levels:
-        score = 0
-        for level in levels:
-            score += platform_test_vec(level, opt.token_list)
-    score = float(score)/float(len(levels))
-
-    return score
-    '''
-    score = 0
-    for level in levels:
-        score += 100 - test_playability(level, opt.token_list, ImgGen, level_l, level_h, is_loaded, use_gen, error_msg,
-                                        game, gateway, render_mario)
+        #score += 100 - test_playability(level, opt.token_list, ImgGen, level_l, level_h, is_loaded, use_gen, error_msg, game, gateway, render_mario)
+        playable = test_playability(level, opt.token_list, ImgGen, level_l, level_h, is_loaded, use_gen, error_msg, game, gateway, render_mario)
+        if playable == 100:
+            score+=1.0
     return score
 
 if __name__ == '__main__':
@@ -235,7 +227,6 @@ if __name__ == '__main__':
     vec_size = 0
     n_pad = int(1*opt.num_layer)
     for noise_map in noise_maps:
-        print(noise_map.shape)
         nzx = int(round((noise_map.shape[-2] - n_pad * 2) * opt.scale_v))
         nzy = int(round((noise_map.shape[-1] - n_pad * 2) * opt.scale_h))
         vec_size += 12*nzx*nzy*opt.num_samples
@@ -246,18 +237,29 @@ if __name__ == '__main__':
     es = CMAEvolutionStrategy(torch.randn(n_features), sigma0 = .5)
 
     ctr = 0
-    n_iter = 3
-    while not es.stop():
+    percent_playable = []
+    n_iter = 10000
+    while not es.stop() and ctr < n_iter:
         solutions = es.ask()
 
         #calculate fitness
         objectives = []
+        playable = 0
+        num_levels = 0
         for solution in solutions:
-            obj = fit_func(solution, opt.device, generators, opt.num_layer, vec_size, reals, noise_amplitudes, opt,
+            result = fit_func(solution, opt.device, generators, opt.num_layer, vec_size, reals, noise_amplitudes, opt,
                            ImgGen, level_l, level_h, is_loaded, use_gen, error_msg, game, gateway, render_mario,
                            in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name,
                            num_samples=opt.num_samples)
+            
+            
+            playable+=result
+            num_levels+=opt.num_samples
+            obj = 1-float(playable)/float(num_levels)
             objectives.append(obj)
+        new_obj = 100*(float(playable)/float(num_levels))
+        percent_playable.append(new_obj)
+        
 
         es.tell(solutions, objectives)
         es.logger.add()
@@ -267,4 +269,16 @@ if __name__ == '__main__':
         
         ctr += 1
 
-   
+        if ctr % 100 == 0:
+            print(percent_playable)
+            num_levelgen = opt.num_samples * len(solutions)
+            print("Levels generated per iteration: ", num_levelgen)
+            fig = plt.figure()
+            xs = [i for i, _ in enumerate(percent_playable)]
+            plt.bar(xs, percent_playable)
+            plt.xlabel('Iterations')
+            plt.ylabel('Playable')
+            plt.title("Percentage of generated levels that are playable at each step of cma-es")
+            
+            plt.savefig('playable')
+            #plt.show()
