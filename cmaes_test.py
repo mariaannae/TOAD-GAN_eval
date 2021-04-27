@@ -1,4 +1,3 @@
-
 import os
 #from shutil import copyfile
 from argparse import Namespace
@@ -8,6 +7,7 @@ from torch.nn.functional import interpolate
 from tqdm import tqdm
 from loguru import logger
 import matplotlib.pyplot as plt
+import numpy as np
 
 # sys.path.append(os.path.join(os.path.abspath(os.path.dirname(__file__)), ".."))  # uncomment if opening form other dir
 
@@ -25,23 +25,19 @@ from generate_noise import generate_spatial_noise
 from generate_samples_cmaes import generate_samples_cmaes
 from models import load_trained_pyramid
 
-import numpy as np
-import torch
-
-from cma.evolution_strategy import CMAEvolutionStrategy
-import cma
-
-
-from evaluate import platform_test_vec
+from evaluate import platform_test_vec, num_jumps
 from random_network import create_random_network
-import matplotlib
-
 
 from mario.level_image_gen import LevelImageGen
 from utils import LevelObject
 from py4j.java_gateway import JavaGateway
 from tkinter import *
 from PIL import ImageTk, Image
+
+from ribs.archives import GridArchive
+from ribs.emitters import ImprovementEmitter
+from ribs.optimizers import Optimizer
+from ribs.visualize import grid_archive_heatmap
 
 # Path to the AI Framework jar for Playing levels
 MARIO_AI_PATH = os.path.abspath(os.path.join(os.path.curdir, "Mario-AI-Framework/mario-1.0-SNAPSHOT.jar"))
@@ -60,13 +56,25 @@ def fit_func(solution, device, generators, num_layer, vec_size, reals, noise_amp
     #generate levels
     levels = generate_samples_cmaes(generators, noise_maps, reals, noise_amplitudes, noise_vector, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples)
 
-    score = 0.0
+    score_play = 0.0
+    score_platform = 0.0
+    score_jumps = 0.0
+
     for level in levels:
-        #score += 100 - test_playability(level, opt.token_list, ImgGen, level_l, level_h, is_loaded, use_gen, error_msg, game, gateway, render_mario)
+
         playable = test_playability(level, opt.token_list, ImgGen, level_l, level_h, is_loaded, use_gen, error_msg, game, gateway, render_mario)
         if playable == 100:
-            score+=1.0
-    return score
+            score_play+=1.0
+
+        score_platform += platform_test_vec(level, opt.token_list)
+
+        score_jumps += num_jumps(level, opt.token_list)
+
+    score_play = (score_play/float(len(levels)))*100
+    score_platform = float(score_platform)/float(len(levels))
+    score_jumps = float(score_jumps)/float(len(levels))
+
+    return score_play, score_platform, score_jumps
 
 if __name__ == '__main__':
      # NOTICE: The "output" dir is where the generator is located as with main.py, even though it is the "input" here
@@ -216,12 +224,20 @@ if __name__ == '__main__':
 
 
 ##############################################################################################
-#cma-es implementation
+#pyribs implementation
 
-    cma_opts = cma.CMAOptions()
-    cma_opts.set('timeout', 5) #set timeout in seconds
-    
-    n_features = 10 #number of input features for the noise vector generator. other tolerance options available.
+    # archive, emitter, and optimizer for cma-es
+    n_features = 100 #number of input features for the noise vector generator
+    batch_size = 3
+    archive = GridArchive([20,20], [(0, 203), (0, 100)]) # objs are platform mismatches, jumps
+    emitters = [ImprovementEmitter(
+        archive,
+        np.random.rand(n_features),
+        0.001,
+        batch_size=batch_size,
+    )]
+    optimizer = Optimizer(archive, emitters)
+
 
     #get the size of the noise map that TOAD-GAN will need
     vec_size = 0
@@ -232,53 +248,32 @@ if __name__ == '__main__':
         vec_size += 12*nzx*nzy*opt.num_samples
 
 
-    #initialize cma-es
-    #TODO:revisit sigma
-    es = CMAEvolutionStrategy(torch.randn(n_features), sigma0 = .5)
+    #pyribs ask/tell loop
+    n_iter =10
+    for i in range(n_iter):
+        solutions = optimizer.ask()
+        #solutions =(torch.from_numpy(solutions).float()).to(opt.device)
 
-    ctr = 0
-    percent_playable = []
-    n_iter = 10000
-    while not es.stop() and ctr < n_iter:
-        solutions = es.ask()
-
-        #calculate fitness
+        bcs = []
         objectives = []
-        playable = 0
+
         num_levels = 0
         for solution in solutions:
             result = fit_func(solution, opt.device, generators, opt.num_layer, vec_size, reals, noise_amplitudes, opt,
                            ImgGen, level_l, level_h, is_loaded, use_gen, error_msg, game, gateway, render_mario,
                            in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name,
-                           num_samples=opt.num_samples)
+                           num_samples=opt.num_samples)    
             
-            
-            playable+=result
-            num_levels+=opt.num_samples
-            obj = 1-float(playable)/float(num_levels)
-            objectives.append(obj)
-        new_obj = 100*(float(playable)/float(num_levels))
-        percent_playable.append(new_obj)
-        
+            bcs.append([result[1], result[2]])
+            objectives.append(result[0])
 
-        es.tell(solutions, objectives)
-        es.logger.add()
-        es.result_pretty()
-        #cma.plot()
-        es.disp()
-        
-        ctr += 1
+        optimizer.tell(objectives, bcs)
 
-        if ctr % 100 == 0:
-            print(percent_playable)
-            num_levelgen = opt.num_samples * len(solutions)
-            print("Levels generated per iteration: ", num_levelgen)
-            fig = plt.figure()
-            xs = [i for i, _ in enumerate(percent_playable)]
-            plt.bar(xs, percent_playable)
-            plt.xlabel('Iterations')
-            plt.ylabel('Playable')
-            plt.title("Percentage of generated levels that are playable at each step of cma-es")
-            
-            plt.savefig('playable')
+        if i % 2 == 0:
+            plt.figure(figsize=(8,6))
+            grid_archive_heatmap(archive)
+            plt.title("Playability")
+            plt.xlabel("Platform Solidity")
+            plt.ylabel("Number of Jumps")
+            plt.savefig('pyribs')
             #plt.show()

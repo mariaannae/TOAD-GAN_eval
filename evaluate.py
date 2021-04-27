@@ -38,4 +38,4 @@ def num_jumps(vec, token_list):
             merged_level += " "
     
     platforms = merged_level.split()
-    return len(platforms)-1
+    return max(len(platforms)-1, 0)
