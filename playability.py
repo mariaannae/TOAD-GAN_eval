@@ -4,50 +4,11 @@ import torch
 # sys.path.append(os.path.join(os.path.abspath(os.path.dirname(__file__)), ".."))  # uncomment if opening form other dir
 
 from mario.level_utils import one_hot_to_ascii_level, group_to_token, token_to_group, read_level, place_a_mario_token
-#from mario.level_image_gen import LevelImageGen as MarioLevelGen
-from mario.level_image_gen import LevelImageGen
 
+from utils import play_level, LevelObject
+from PIL import ImageTk
 
-
-from utils import load_level, play_level, LevelObject
-from py4j.java_gateway import JavaGateway
-from tkinter import *
-from PIL import ImageTk, Image, ImageDraw
-
-# Path to the AI Framework jar for Playing levels
-MARIO_AI_PATH = os.path.abspath(os.path.join(os.path.curdir, "Mario-AI-Framework/mario-1.0-SNAPSHOT.jar"))
-
-
-def test_playability(vec, token_list):
-    render_mario = True
-    root = Tk(className=" TOAD-GUI")
-
-    level_l = IntVar()
-    level_h = IntVar()
-    level_l.set(0)
-    level_h.set(0)
-    placeholder = Image.new('RGB', (890, 256), (255, 255, 255))  # Placeholder image for the preview
-    load_string_gen = StringVar()
-    load_string_txt = StringVar()
-    ImgGen = LevelImageGen(os.path.join(os.path.join(os.curdir, "utils"), "sprites"))
-    use_gen = BooleanVar()
-    use_gen.set(False)
-    levelimage = ImageTk.PhotoImage(placeholder)
-    level_obj = LevelObject('-', None, levelimage, ['-'], None, None)
-    is_loaded = BooleanVar()
-    is_loaded.set(False)
-    error_msg = StringVar()
-    error_msg.set("No Errors")
-
-    # Py4j Java bridge uses Mario AI Framework
-    gateway = JavaGateway.launch_gateway(classpath=MARIO_AI_PATH, die_on_exit=True, redirect_stdout=sys.stdout,
-                                         redirect_stderr=sys.stderr)
-
-    # Open up game window and assign agent
-    game = gateway.jvm.engine.core.MarioGame()
-    game.initVisuals(2.0)
-    agent = gateway.jvm.agents.robinBaumgarten.Agent()
-    game.setAgent(agent)
+def test_playability(vec, token_list, ImgGen, level_l, level_h, is_loaded, use_gen, error_msg, game, gateway, render_mario):
 
     #create a level object to load the level into
     level_obj = LevelObject(0,0,0,0,0,0)

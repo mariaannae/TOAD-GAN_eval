@@ -37,10 +37,20 @@ from random_network import create_random_network
 import matplotlib
 matplotlib.use('Agg')
 
+from mario.level_image_gen import LevelImageGen
+from utils import LevelObject
+from py4j.java_gateway import JavaGateway
+from tkinter import *
+from PIL import ImageTk, Image
+
+# Path to the AI Framework jar for Playing levels
+MARIO_AI_PATH = os.path.abspath(os.path.join(os.path.curdir, "Mario-AI-Framework/mario-1.0-SNAPSHOT.jar"))
+
 from playability import test_playability
 
 #define the fitness function:
-def fit_func(solution, device, generators, num_layer, vec_size, reals, noise_amplitudes, opt, in_s, scale_v, scale_h, save_dir, num_samples):
+def fit_func(solution, device, generators, num_layer, vec_size, reals, noise_amplitudes, opt, ImgGen, level_l, level_h,
+             is_loaded, use_gen, error_msg, game, gateway, render_mario, in_s, scale_v, scale_h, save_dir, num_samples):
 
     #create the noise generator
     rand_network = create_random_network(len(solution), vec_size, device).to(device)
@@ -62,7 +72,8 @@ def fit_func(solution, device, generators, num_layer, vec_size, reals, noise_amp
     '''
     score = 0
     for level in levels:
-        score += 100 - test_playability(level, opt.token_list)
+        score += 100 - test_playability(level, opt.token_list, ImgGen, level_l, level_h, is_loaded, use_gen, error_msg,
+                                        game, gateway, render_mario)
     return score
 
 if __name__ == '__main__':
@@ -85,7 +96,40 @@ if __name__ == '__main__':
             parse.error('--out_ is required (--make_mario_samples experiment is the exception)')
 
     opt = post_config(opt)
-    
+
+    render_mario = True
+    root = Tk(className=" TOAD-GUI")
+
+    level_l = IntVar()
+    level_h = IntVar()
+    level_l.set(0)
+    level_h.set(0)
+    placeholder = Image.new('RGB', (890, 256), (255, 255, 255))  # Placeholder image for the preview
+    load_string_gen = StringVar()
+    load_string_txt = StringVar()
+    ImgGen = LevelImageGen(os.path.join(os.path.join(os.curdir, "utils"), "sprites"))
+    use_gen = BooleanVar()
+    use_gen.set(False)
+    levelimage = ImageTk.PhotoImage(placeholder)
+    level_obj = LevelObject('-', None, levelimage, ['-'], None, None)
+    is_loaded = BooleanVar()
+    is_loaded.set(False)
+    error_msg = StringVar()
+    error_msg.set("No Errors")
+
+    # Path to the AI Framework jar for Playing levels
+    MARIO_AI_PATH = os.path.abspath(os.path.join(os.path.curdir, "Mario-AI-Framework/mario-1.0-SNAPSHOT.jar"))
+
+    # Py4j Java bridge uses Mario AI Framework
+    gateway = JavaGateway.launch_gateway(classpath=MARIO_AI_PATH, die_on_exit=True, redirect_stdout=sys.stdout,
+                                         redirect_stderr=sys.stderr)
+
+    # Open up game window and assign agent
+    game = gateway.jvm.engine.core.MarioGame()
+    game.initVisuals(2.0)
+    agent = gateway.jvm.agents.robinBaumgarten.Agent()
+    game.setAgent(agent)
+
 
     #TODO: maybe fix this option later in the project
     if opt.make_mario_samples:
@@ -209,7 +253,10 @@ if __name__ == '__main__':
         #calculate fitness
         objectives = []
         for solution in solutions:
-            obj = fit_func(solution, opt.device, generators, opt.num_layer, vec_size, reals, noise_amplitudes, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples)
+            obj = fit_func(solution, opt.device, generators, opt.num_layer, vec_size, reals, noise_amplitudes, opt,
+                           ImgGen, level_l, level_h, is_loaded, use_gen, error_msg, game, gateway, render_mario,
+                           in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name,
+                           num_samples=opt.num_samples)
             objectives.append(obj)
 
         es.tell(solutions, objectives)
