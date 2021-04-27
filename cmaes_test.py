@@ -32,10 +32,9 @@ from cma.evolution_strategy import CMAEvolutionStrategy
 import cma
 
 
-from evaluate import platform_test_vec
+from evaluate import platform_test_vec, num_jumps
 from random_network import create_random_network
 import matplotlib
-matplotlib.use('Agg')
 
 #define the fitness function:
 def fit_func(solution, device, generators, num_layer, vec_size, reals, noise_amplitudes, opt, in_s, scale_v, scale_h, save_dir, num_samples):
@@ -182,7 +181,6 @@ if __name__ == '__main__':
     vec_size = 0
     n_pad = int(1*opt.num_layer)
     for noise_map in noise_maps:
-        print(noise_map.shape)
         nzx = int(round((noise_map.shape[-2] - n_pad * 2) * opt.scale_v))
         nzy = int(round((noise_map.shape[-1] - n_pad * 2) * opt.scale_h))
         vec_size += 12*nzx*nzy*opt.num_samples
@@ -193,8 +191,9 @@ if __name__ == '__main__':
     es = CMAEvolutionStrategy(torch.randn(n_features), sigma0 = .5)
 
     ctr = 0
-    n_iter = 3
-    while not es.stop():
+    scores = []
+    n_iter = 10000
+    while not es.stop() and ctr < n_iter:
         solutions = es.ask()
 
         #calculate fitness
@@ -202,7 +201,9 @@ if __name__ == '__main__':
         for solution in solutions:
             obj = fit_func(solution, opt.device, generators, opt.num_layer, vec_size, reals, noise_amplitudes, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples)
             objectives.append(obj)
-
+        
+        score = sum(objectives)/float(len(objectives))
+        scores.append(score)
         es.tell(solutions, objectives)
         es.logger.add()
         es.result_pretty()
@@ -210,5 +211,19 @@ if __name__ == '__main__':
         es.disp()
         
         ctr += 1
+
+        if (i+1)%100 == 0:
+
+            print(scores)
+            num_levelgen = opt.num_samples * len(solutions)
+            print("Levels generated per iteration: ", num_levelgen)
+            fig = plt.figure()
+            xs = [i for i, _ in enumerate(scores)]
+            plt.bar(xs, scores)
+            plt.xlabel('Iterations')
+            plt.ylabel('Mismatched platform tiles')
+            plt.title("Average number of mismatched platform tiles per generated level")
+            plt.savefig('platform')
+            #plt.show()
 
    
