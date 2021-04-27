@@ -9,8 +9,6 @@ from loguru import logger
 import matplotlib.pyplot as plt
 import numpy as np
 
-# sys.path.append(os.path.join(os.path.abspath(os.path.dirname(__file__)), ".."))  # uncomment if opening form other dir
-
 from config import get_arguments, post_config
 from mario.level_utils import one_hot_to_ascii_level, group_to_token, token_to_group, read_level
 from mario.level_image_gen import LevelImageGen as MarioLevelGen
@@ -300,7 +298,6 @@ if __name__ == '__main__':
             #plt.show()
             plt.close()
 
-            '''
             #generate a playability plot
             num_levelgen = opt.num_samples * len(solutions)
             fig = plt.figure()
@@ -322,4 +319,4 @@ if __name__ == '__main__':
             plt.savefig('platform_improvementemitter')
             plt.close()
 
-            '''
+        
