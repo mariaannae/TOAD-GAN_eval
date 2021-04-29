@@ -8,6 +8,7 @@ from tqdm import tqdm
 from loguru import logger
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas
 
 from config import get_arguments, post_config
 from mario.level_utils import one_hot_to_ascii_level, group_to_token, token_to_group, read_level
@@ -307,7 +308,7 @@ if __name__ == '__main__':
             plt.title("Playability")
             plt.xlabel("Platform Solidity")
             plt.ylabel("Number of Jumps")
-            figname = '/pyribs_improvementemitter_' + str(i)
+            figname = '/map_' + str(i)
             #figname = 'test'
             plt.savefig(logdir + figname)
             #plt.show()
@@ -321,7 +322,7 @@ if __name__ == '__main__':
             plt.xlabel('Generations')
             plt.ylabel('Playable')
             plt.title("Average percentage of level completed by A* agent at each generation")
-            plt.savefig(logdir + '/playable_improvementemitter')
+            plt.savefig(logdir + '/playable')
             plt.close()
 
             #generate a platform score plot
@@ -331,7 +332,12 @@ if __name__ == '__main__':
             plt.xlabel('Generations')
             plt.ylabel('Platform solidity')
             plt.title("Average platform holes")
-            plt.savefig(logdir + '/platform_improvementemitter')
+            plt.savefig(logdir + '/platform')
             plt.close()
+
+            #save the archive
+            df = archive.as_pandas(include_solutions=True)
+            df.to_pickle(logdir + "/archive.zip")
+
 
         
