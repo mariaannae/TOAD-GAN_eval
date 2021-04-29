@@ -42,11 +42,10 @@ from ribs.visualize import grid_archive_heatmap
 MARIO_AI_PATH = os.path.abspath(os.path.join(os.path.curdir, "Mario-AI-Framework/mario-1.0-SNAPSHOT.jar"))
 
 #define the fitness function:
-def fit_func(solution, device, generators, num_layer, vec_size, reals, noise_amplitudes, opt, ImgGen, level_l, level_h,
+def fit_func(solution, device, generators, num_layer, rand_network, reals, noise_amplitudes, opt, ImgGen, level_l, level_h,
              is_loaded, use_gen, error_msg, game, gateway, render_mario, in_s, scale_v, scale_h, save_dir, num_samples):
 
     #create the noise generator
-    rand_network = create_random_network(len(solution), vec_size, device).to(device)
     solution = torch.tensor(solution).float().to(device)
     noise_vector = rand_network(solution).flatten().to(device)
 
@@ -221,6 +220,16 @@ if __name__ == '__main__':
         s_dir_name = "%s_random_samples_v%.5f_h%.5f_st%d" % (prefix, opt.scale_v, opt.scale_h, opt.gen_start_scale)
 
 
+    #logging setup
+    if not os.path.exists('logs_cmaes'):
+        os.mkdir('logs_cmaes')
+
+    i = 1
+    while(os.path.exists('logs_cmaes/'+ str(i))):
+        i+=1
+
+    logdir = "logs_cmaes/"+str(i)
+    os.mkdir(logdir)
 
 ##############################################################################################
 #pyribs implementation
@@ -246,6 +255,12 @@ if __name__ == '__main__':
         nzy = int(round((noise_map.shape[-1] - n_pad * 2) * opt.scale_h))
         vec_size += 12*nzx*nzy*opt.num_samples
 
+    #create a random network that will take a vector from the emitter and generate a larger vector to feed into toad-gan
+    rand_network = create_random_network(n_features, vec_size, opt.device).to(opt.device)
+
+    #the model will not be trained, so we only need to save it once for reproduceability
+    torch.save(rand_network.state_dict(), logdir+"/model")
+
     percent_playable = []
     platform_score = []
     #pyribs ask/tell loop
@@ -261,7 +276,7 @@ if __name__ == '__main__':
         platform = 0
         num_levels = 0
         for solution in solutions:
-            result = fit_func(solution, opt.device, generators, opt.num_layer, vec_size, reals, noise_amplitudes, opt,
+            result = fit_func(solution, opt.device, generators, opt.num_layer, rand_network, reals, noise_amplitudes, opt,
                            ImgGen, level_l, level_h, is_loaded, use_gen, error_msg, game, gateway, render_mario,
                            in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name,
                            num_samples=opt.num_samples)    
@@ -292,9 +307,9 @@ if __name__ == '__main__':
             plt.title("Playability")
             plt.xlabel("Platform Solidity")
             plt.ylabel("Number of Jumps")
-            #figname = 'pyribs_improvementemitter_' + str(i)
-            figname = 'test'
-            plt.savefig(figname)
+            figname = '/pyribs_improvementemitter_' + str(i)
+            #figname = 'test'
+            plt.savefig(logdir + figname)
             #plt.show()
             plt.close()
 
@@ -306,7 +321,7 @@ if __name__ == '__main__':
             plt.xlabel('Generations')
             plt.ylabel('Playable')
             plt.title("Average percentage of level completed by A* agent at each generation")
-            plt.savefig('playable_improvementemitter')
+            plt.savefig(logdir + '/playable_improvementemitter')
             plt.close()
 
             #generate a platform score plot
@@ -316,7 +331,7 @@ if __name__ == '__main__':
             plt.xlabel('Generations')
             plt.ylabel('Platform solidity')
             plt.title("Average platform holes")
-            plt.savefig('platform_improvementemitter')
+            plt.savefig(logdir + '/platform_improvementemitter')
             plt.close()
 
         
