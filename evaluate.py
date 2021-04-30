@@ -1,5 +1,5 @@
 import os
-#from shutil import copyfile
+import time
 from argparse import Namespace
 import torch
 import torch.nn as nn
@@ -9,6 +9,7 @@ from loguru import logger
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas
+from torch.utils.tensorboard import SummaryWriter
 
 from config import get_arguments, post_config
 from mario.level_utils import one_hot_to_ascii_level, group_to_token, token_to_group, read_level
@@ -28,23 +29,18 @@ from metrics import platform_test_vec, num_jumps
 from random_network import create_random_network
 from playability import test_playability
 
-from mario.level_image_gen import LevelImageGen
-from utils import LevelObject
-from py4j.java_gateway import JavaGateway
-from tkinter import *
-from PIL import ImageTk, Image
-
 from ribs.archives import GridArchive
 from ribs.emitters import ImprovementEmitter, OptimizingEmitter
 from ribs.optimizers import Optimizer
 from ribs.visualize import grid_archive_heatmap
 
-# Path to the AI Framework jar for Playing levels
-MARIO_AI_PATH = os.path.abspath(os.path.join(os.path.curdir, "Mario-AI-Framework/mario-1.0-SNAPSHOT.jar"))
+from xvfbwrapper import Xvfb
+import ray
+
 
 #define the fitness function:
-def fit_func(solution, device, generators, num_layer, rand_network, reals, noise_amplitudes, opt, ImgGen, level_l, level_h,
-             is_loaded, use_gen, error_msg, game, gateway, render_mario, in_s, scale_v, scale_h, save_dir, num_samples):
+@ray.remote
+def multi_fit_func(solution, device, generators, num_layer, rand_network, reals, noise_amplitudes, opt, in_s, scale_v, scale_h, save_dir, num_samples):
 
     #create the noise generator
     solution = torch.tensor(solution).float().to(device)
@@ -59,7 +55,7 @@ def fit_func(solution, device, generators, num_layer, rand_network, reals, noise
 
     for level in levels:
 
-        playable = test_playability(level, opt.token_list, ImgGen, level_l, level_h, is_loaded, use_gen, error_msg, game, gateway, render_mario)
+        playable = test_playability(level, opt.token_list)
         score_play+=playable
 
         score_platform += platform_test_vec(level, opt.token_list)
@@ -71,6 +67,45 @@ def fit_func(solution, device, generators, num_layer, rand_network, reals, noise
     score_jumps = float(score_jumps)/float(len(levels))
 
     return score_play, score_platform, score_jumps
+
+def  fit_func(solution, device, generators, num_layer, rand_network, reals, noise_amplitudes, opt, in_s, scale_v, scale_h, save_dir, num_samples):
+
+    #create the noise generator
+    solution = torch.tensor(solution).float().to(device)
+    noise_vector = rand_network(solution).flatten().to(device)
+
+    #generate levels
+    levels = generate_samples_cmaes(generators, noise_maps, reals, noise_amplitudes, noise_vector, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples)
+
+    score_play = 0.0
+    score_platform = 0.0
+    score_jumps = 0.0
+
+    for level in levels:
+
+        playable = test_playability(level, opt.token_list)
+        score_play+=playable
+
+        score_platform += platform_test_vec(level, opt.token_list)
+
+        score_jumps += num_jumps(level, opt.token_list)
+
+    score_play = (score_play/float(len(levels)))
+    score_platform = float(score_platform)/float(len(levels))
+    score_jumps = float(score_jumps)/float(len(levels))
+
+    return score_play, score_platform, score_jumps
+
+
+def tb_logging(archive, itr, start_time, logdir, score):
+    # TensorBoard Logging
+    df = archive.as_pandas(include_solutions=False)
+    elapsed_time = time.time() - start_time
+    writer.add_scalar('score/mean', df['objective'].mean(), itr)
+    writer.add_scalar('score/max', df['objective'].max(), itr)
+    writer.add_scalar('score/min', df['objective'].min(), itr)
+    writer.add_scalar('playability', score, itr)
+    writer.add_scalar('generations/second', elapsed_time, itr)
 
 if __name__ == '__main__':
      # NOTICE: The "output" dir is where the generator is located as with main.py, even though it is the "input" here
@@ -86,6 +121,8 @@ if __name__ == '__main__':
                                                                          "specified in the code.", default=False)
     parse.add_argument("--seed_mariokart_road", action="store_true", help="seed mariokart generators with a road image", default=False)
     parse.add_argument("--token_insert_experiment", action="store_true", help="make token insert experiment (experimental!)", default=False)
+    parse.add_argument("--multiproc", action="store_true", help="run with multiprocessing", default=False)
+
     opt = parse.parse_args()
 
     if (not opt.out_) and (not opt.make_mario_samples):
@@ -95,40 +132,6 @@ if __name__ == '__main__':
     
     #setting number of samples generated to 1, so that each noise vector produced corresponds to only one generated level and is not divided into multiple levels
     opt.num_samples = 1
-
-    render_mario = True
-    root = Tk(className=" TOAD-GUI")
-
-    level_l = IntVar()
-    level_h = IntVar()
-    level_l.set(0)
-    level_h.set(0)
-    placeholder = Image.new('RGB', (890, 256), (255, 255, 255))  # Placeholder image for the preview
-    load_string_gen = StringVar()
-    load_string_txt = StringVar()
-    ImgGen = LevelImageGen(os.path.join(os.path.join(os.curdir, "utils"), "sprites"))
-    use_gen = BooleanVar()
-    use_gen.set(False)
-    levelimage = ImageTk.PhotoImage(placeholder)
-    level_obj = LevelObject('-', None, levelimage, ['-'], None, None)
-    is_loaded = BooleanVar()
-    is_loaded.set(False)
-    error_msg = StringVar()
-    error_msg.set("No Errors")
-
-    # Path to the AI Framework jar for Playing levels
-    MARIO_AI_PATH = os.path.abspath(os.path.join(os.path.curdir, "Mario-AI-Framework/mario-1.0-SNAPSHOT.jar"))
-
-    # Py4j Java bridge uses Mario AI Framework
-    gateway = JavaGateway.launch_gateway(classpath=MARIO_AI_PATH, die_on_exit=True, redirect_stdout=sys.stdout,
-                                         redirect_stderr=sys.stderr)
-
-    # Open up game window and assign agent
-    game = gateway.jvm.engine.core.MarioGame()
-    game.initVisuals(2.0)
-    agent = gateway.jvm.agents.robinBaumgarten.Agent()
-    game.setAgent(agent)
-
 
     #TODO: maybe fix this option later in the project
     if opt.make_mario_samples:
@@ -232,14 +235,21 @@ if __name__ == '__main__':
     logdir = "logs_cmaes/"+str(i)
     os.mkdir(logdir)
 
+    if not(os.path.exists('logs_cmaes/tb_logs/')):
+        os.mkdir('logs_cmaes/tb_logs/')
+
+    tb_logdir = "logs_cmaes/tb_logs/"+str(i)
+    os.mkdir(tb_logdir)
+    writer = SummaryWriter(tb_logdir)
+
 ##############################################################################################
-#pyribs implementation
+#evolutionary search implementation
 
     # archive, emitter, and optimizer for cma-es
     n_features = 100 #number of input features for the noise vector generator
     batch_size = 10
-    archive = GridArchive([20,20], [(0, 50), (0, 40)]) # objs are platform mismatches, jumps
-    emitters = [ImprovementEmitter(
+    archive = GridArchive([20,20], [(0, 200), (0, 100)]) # objs are platform mismatches, jumps
+    emitters = [OptimizingEmitter(
         archive,
         np.zeros(n_features),
         1.0,
@@ -264,11 +274,22 @@ if __name__ == '__main__':
 
     percent_playable = []
     platform_score = []
+
+    #create virtual display
+    xvfb = Xvfb()
+    xvfb.start()
+
+    if opt.multiproc:
+        ray.init()
+
     #pyribs ask/tell loop
-    n_iter =10000
-    for i in range(n_iter):
+    n_generation =10000
+    
+    for i in range(n_generation):
+        
+        start_time = time.time()
         solutions = optimizer.ask()
-        #solutions =(torch.from_numpy(solutions).float()).to(opt.device)
+        solutions =(torch.from_numpy(solutions).float()).to(opt.device)
 
         bcs = []
         objectives = []
@@ -276,12 +297,14 @@ if __name__ == '__main__':
 
         platform = 0
         num_levels = 0
-        for solution in solutions:
-            result = fit_func(solution, opt.device, generators, opt.num_layer, rand_network, reals, noise_amplitudes, opt,
-                           ImgGen, level_l, level_h, is_loaded, use_gen, error_msg, game, gateway, render_mario,
-                           in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name,
-                           num_samples=opt.num_samples)    
-            
+
+        if opt.multiproc:
+            futures = [multi_fit_func.remote(solution, opt.device, generators, opt.num_layer, rand_network, reals, noise_amplitudes, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples) for solution in solutions]
+            results = ray.get(futures)
+        else:
+            results = [fit_func(solution, opt.device, generators, opt.num_layer, rand_network, reals, noise_amplitudes, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples) for solution in solutions]
+
+        for result in results:
             bcs.append([result[1], result[2]])
             objectives.append(result[0])
 
@@ -300,8 +323,9 @@ if __name__ == '__main__':
 
         optimizer.tell(objectives, bcs)
 
-        if i % 5 == 0:
-            print("Saving after generation: ", i)
+        tb_logging(archive, i, start_time, logdir, playable)
+
+        if i % 10 == 0:
             #generate a heatmap
             plt.figure(figsize=(8,6))
             grid_archive_heatmap(archive)
@@ -312,27 +336,6 @@ if __name__ == '__main__':
             #figname = 'test'
             plt.savefig(logdir + figname)
             #plt.show()
-            plt.close()
-
-            #generate a playability plot
-            num_levelgen = opt.num_samples * len(solutions)
-            fig = plt.figure()
-            xs = [i+1 for i, _ in enumerate(percent_playable)]
-            plt.bar(xs, percent_playable)
-            plt.xlabel('Generations')
-            plt.ylabel('Playable')
-            plt.title("Average percentage of level completed by A* agent at each generation")
-            plt.savefig(logdir + '/playable')
-            plt.close()
-
-            #generate a platform score plot
-            fig = plt.figure()
-            xs = [i+1 for i, _ in enumerate(platform_score)]
-            plt.bar(xs, platform_score)
-            plt.xlabel('Generations')
-            plt.ylabel('Platform solidity')
-            plt.title("Average platform holes")
-            plt.savefig(logdir + '/platform')
             plt.close()
 
             #save the archive
