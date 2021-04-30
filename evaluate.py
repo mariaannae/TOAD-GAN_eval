@@ -216,9 +216,6 @@ if __name__ == '__main__':
     #the model will not be trained, so we only need to save it once for reproduceability
     torch.save(rand_network.state_dict(), logdir+"/model")
 
-    percent_playable = []
-    platform_score = []
-
     #create virtual display
     xvfb = Xvfb()
     xvfb.start()
@@ -260,10 +257,6 @@ if __name__ == '__main__':
             platform+=result[1]
 
         playable = (float(playable)/float(num_levels))
-        percent_playable.append(playable)
-
-        platform = float(platform)/float(num_levels)
-        platform_score.append(platform)
 
         optimizer.tell(objectives, bcs)
 
@@ -277,9 +270,7 @@ if __name__ == '__main__':
             plt.xlabel("Platform Solidity")
             plt.ylabel("Number of Jumps")
             figname = '/map_' + str(i)
-            #figname = 'test'
             plt.savefig(logdir + figname)
-            #plt.show()
             plt.close()
 
             #save the archive
