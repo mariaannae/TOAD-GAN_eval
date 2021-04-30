@@ -33,13 +33,14 @@ from ribs.visualize import grid_archive_heatmap
 from xvfbwrapper import Xvfb
 import ray
 
+#(pid=1120939) evaluate.py:42: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
 
 #define the fitness function:
 @ray.remote
 def multi_fit_func(solution, device, generators, num_layer, rand_network, reals, noise_amplitudes, opt, in_s, scale_v, scale_h, save_dir, num_samples):
 
     #create the noise generator
-    solution = torch.tensor(solution).float().to(device)
+    solution = solution.clone().detach().to(device)
     noise_vector = rand_network(solution).flatten().to(device)
 
     #generate levels
@@ -67,7 +68,7 @@ def multi_fit_func(solution, device, generators, num_layer, rand_network, reals,
 def  fit_func(solution, device, generators, num_layer, rand_network, reals, noise_amplitudes, opt, in_s, scale_v, scale_h, save_dir, num_samples):
 
     #create the noise generator
-    solution = torch.tensor(solution).float().to(device)
+    solution = solution.clone().detach().to(device)
     noise_vector = rand_network(solution).flatten().to(device)
 
     #generate levels
@@ -104,7 +105,7 @@ def tb_logging(archive, itr, start_time, logdir, score):
     writer.add_scalar('generations/second', elapsed_time, itr)
 
 if __name__ == '__main__':
-     # NOTICE: The "output" dir is where the generator is located as with main.py, even though it is the "input" here
+    # NOTICE: The "output" dir is where the generator is located as with main.py, even though it is the "input" here
 
     # Parse arguments
     parse = get_arguments()
@@ -113,9 +114,6 @@ if __name__ == '__main__':
     parse.add_argument("--scale_h", type=float, help="horizontal scale factor", default=1.0)
     parse.add_argument("--gen_start_scale", type=int, help="scale to start generating in", default=0)
     parse.add_argument("--num_samples", type=int, help="number of samples to be generated", default=10)
-    parse.add_argument("--make_mario_samples", action="store_true", help="make 1000 samples for each mario generator"
-                                                                         "specified in the code.", default=False)
-    parse.add_argument("--token_insert_experiment", action="store_true", help="make token insert experiment (experimental!)", default=False)
     parse.add_argument("--multiproc", action="store_true", help="run with multiprocessing", default=False)
 
     opt = parse.parse_args()
@@ -128,44 +126,32 @@ if __name__ == '__main__':
     #setting number of samples generated to 1, so that each noise vector produced corresponds to only one generated level and is not divided into multiple levels
     opt.num_samples = 1
 
-    #TODO: maybe fix this option later in the project
-    if opt.make_mario_samples:
-        # Code to make a large body of mario samples for other experiments
-        opt.game = 'mario'
-        sprite_path = opt.game + '/sprites'
+    token_insertion = False
+
+    # Init game specific inputs
+    replace_tokens = {}
+    sprite_path = opt.game + '/sprites'
+    if opt.game == 'mario':
         opt.ImgGen = MarioLevelGen(sprite_path)
-        opt.gen_start_scale = 0  # Forced for this experiment
+        replace_tokens = MARIO_REPLACE_TOKENS
+        downsample = special_mario_downsampling
 
-        generate_mario_samples(opt)
-       
     else:
-        # Code to make samples for given generator
-        token_insertion = True if opt.token_insert and opt.token_insert_experiment else False
+        NameError("name of --game not recognized. Supported: mario")
 
-        # Init game specific inputs
-        replace_tokens = {}
-        sprite_path = opt.game + '/sprites'
-        if opt.game == 'mario':
-            opt.ImgGen = MarioLevelGen(sprite_path)
-            replace_tokens = MARIO_REPLACE_TOKENS
-            downsample = special_mario_downsampling
+    # Load level
+    real = read_level(opt, None, replace_tokens).to(opt.device)
+    # Load Generator
+    generators, noise_maps, reals, noise_amplitudes = load_trained_pyramid(opt)
 
-        else:
-            NameError("name of --game not recognized. Supported: mario")
+    # Get input shape for in_s
+    real_down = downsample(1, [[opt.scale_v, opt.scale_h]], real, opt.token_list)
+    real_down = real_down[0]
+    in_s = torch.zeros_like(real_down, device=opt.device)
+    prefix = "arbitrary"
 
-        # Load level
-        real = read_level(opt, None, replace_tokens).to(opt.device)
-        # Load Generator
-        generators, noise_maps, reals, noise_amplitudes = load_trained_pyramid(opt)
-
-        # Get input shape for in_s
-        real_down = downsample(1, [[opt.scale_v, opt.scale_h]], real, opt.token_list)
-        real_down = real_down[0]
-        in_s = torch.zeros_like(real_down, device=opt.device)
-        prefix = "arbitrary"
-
-        # Directory name
-        s_dir_name = "%s_random_samples_v%.5f_h%.5f_st%d" % (prefix, opt.scale_v, opt.scale_h, opt.gen_start_scale)
+    # Directory name
+    s_dir_name = "%s_random_samples_v%.5f_h%.5f_st%d" % (prefix, opt.scale_v, opt.scale_h, opt.gen_start_scale)
 
 
     #logging setup
