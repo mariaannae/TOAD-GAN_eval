@@ -65,7 +65,7 @@ def multi_fit_func(solution, device, generators, num_layer, rand_network, reals,
 
     return score_play, score_platform, score_jumps
 
-def  fit_func(solution, device, generators, num_layer, rand_network, reals, noise_amplitudes, opt, in_s, scale_v, scale_h, save_dir, num_samples):
+def fit_func(solution, device, generators, num_layer, rand_network, reals, noise_amplitudes, opt, in_s, scale_v, scale_h, save_dir, num_samples):
 
     #create the noise generator
     solution = solution.clone().detach().to(device)
@@ -178,13 +178,14 @@ if __name__ == '__main__':
     # archive, emitter, and optimizer for cma-es
     n_features = 100 #number of input features for the noise vector generator
     batch_size = 10
-    archive = GridArchive([20,20], [(0, 200), (0, 100)]) # objs are platform mismatches, jumps
+    n_bins = [20, 20]
+    archive = GridArchive(n_bins, [(0, 200), (0, 100)]) # objs are platform mismatches, jumps
     emitters = [OptimizingEmitter(
         archive,
         np.zeros(n_features),
         1.0,
         batch_size=batch_size,
-    )]
+    )] for _ in range(5)
     optimizer = Optimizer(archive, emitters)
 
 
@@ -198,9 +199,10 @@ if __name__ == '__main__':
 
     #create a random network that will take a vector from the emitter and generate a larger vector to feed into toad-gan
     rand_network = create_random_network(n_features, vec_size, opt.device).to(opt.device)
+    rand_network.eval()
 
     #the model will not be trained, so we only need to save it once for reproduceability
-    torch.save(rand_network.state_dict(), logdir+"/model")
+    torch.save(rand_network.state_dict(),  logdir+"/model")
 
     #create virtual display
     xvfb = Xvfb()
