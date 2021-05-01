@@ -10,7 +10,6 @@ from tkinter import *
 from tkinter import ttk
 from tkinter import filedialog as fd
 from PIL import ImageTk, Image, ImageDraw
-from py4j.java_gateway import JavaGateway
 from level_utils import read_level_from_file, one_hot_to_ascii_level, place_a_mario_token, ascii_to_one_hot_level
 from level_image_gen import LevelImageGen
 
@@ -45,114 +44,6 @@ class LevelObject:
         self.scales = scales
         self.noises = noises
 
-
-def load_level(fname):
-    '''
-    level_l = IntVar()
-    level_h = IntVar()
-    level_l.set(0)
-    level_h.set(0)
-    placeholder = Image.new('RGB', (890, 256), (255, 255, 255))  # Placeholder image for the preview
-    load_string_gen = StringVar()
-    load_string_txt = StringVar()
-    ImgGen = LevelImageGen(os.path.join(os.path.join(os.curdir, "utils"), "sprites"))
-    error_msg = StringVar()
-    error_msg.set("No Errors")
-    use_gen = BooleanVar()
-    use_gen.set(False)
-    levelimage = ImageTk.PhotoImage(placeholder)
-    level_obj = LevelObject('-', None, levelimage, ['-'], None, None)
-    is_loaded = BooleanVar()
-    is_loaded.set(False)
-    '''
-
-    # fname = fd.askopenfilename(title='Load Level', initialdir=os.curdir, filetypes=[("level .txt files", "*.txt")])
-    if len(fname) == 0:
-        return  # loading was cancelled
-    try:
-        error_msg.set("Loading level...")
-        is_loaded.set(False)
-        use_gen.set(False)
-
-        if fname[-3:] == "txt":
-            load_string_gen.set('Path: ' + fname)
-            folder, lname = os.path.split(fname)
-
-            # Load level
-            lev, tok = read_level_from_file(folder, lname)
-
-            level_obj.oh_level = torch.Tensor(lev)  # casting to Tensor to keep consistency with generated levels
-            level_obj.ascii_level = one_hot_to_ascii_level(lev, tok)
-
-            # Check if a Mario token exists - if not, we need to place one
-            m_exists = False
-            for line in level_obj.ascii_level:
-                if 'M' in line:
-                    m_exists = True
-                    break
-
-            if not m_exists:
-                level_obj.ascii_level = place_a_mario_token(level_obj.ascii_level)
-            level_obj.tokens = tok
-
-            img = ImageTk.PhotoImage(ImgGen.render(level_obj.ascii_level))
-            level_obj.image = img
-
-            level_obj.scales = None
-            level_obj.noises = None
-
-            level_l.set(lev.shape[-1])
-            level_h.set(lev.shape[-2])
-
-            is_loaded.set(True)
-            use_gen.set(False)
-            error_msg.set("Level loaded")
-        else:
-            error_msg.set("No level file selected.")
-    except Exception:
-        error_msg.set("No level file selected.")
-    return level_obj
-
-
-def play_level(level_obj, game, gateway, render_mario):
-    
-    error_msg = StringVar()
-    error_msg.set("No Errors")
-    '''
-    use_gen = BooleanVar()
-    use_gen.set(False)
-    '''
-    is_loaded = BooleanVar()
-    is_loaded.set(False)
-    
-    # error_msg.set("Playing level...")
-    # is_loaded.set(False)
-    # remember_use_gen = use_gen.get()
-    # use_gen.set(False)
-    # Py4j Java bridge uses Mario AI Framework
-    # gateway = JavaGateway.launch_gateway(classpath=MARIO_AI_PATH, die_on_exit=True, redirect_stdout=sys.stdout, redirect_stderr=sys.stderr)
-    # game = gateway.jvm.engine.core.MarioGame()
-    perc = 0
-    try:
-        # game.initVisuals(2.0)
-        # agent = gateway.jvm.agents.robinBaumgarten.Agent()
-        # game.setAgent(agent)
-        # while True:
-        result = game.gameLoop(''.join(level_obj.ascii_level), 20, 0, render_mario, 1000000)
-        perc = int(result.getCompletionPercentage() * 100)
-        error_msg.set("Level Played. Completion Percentage: %d%%" % perc)
-    except Exception:
-        error_msg.set("Level Play was interrupted.")
-        is_loaded.set(True)
-        # use_gen.set(remember_use_gen)
-    finally:
-        # game.getWindow().dispose()
-        gateway.java_process.kill()
-        gateway.close()
-
-    is_loaded.set(True)
-    # use_gen.set(remember_use_gen)  # only set use_gen to True if it was previously
-    return perc
 
 def set_seed(seed=0):
     """ Set the seed for all possible sources of randomness to allow for reproduceability. """

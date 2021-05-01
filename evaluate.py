@@ -102,7 +102,7 @@ def tb_logging(archive, itr, start_time, logdir, score):
     writer.add_scalar('score/max', df['objective'].max(), itr)
     writer.add_scalar('score/min', df['objective'].min(), itr)
     writer.add_scalar('playability', score, itr)
-    writer.add_scalar('generations/second', elapsed_time, itr)
+    writer.add_scalar('seconds/generation', elapsed_time, itr)
 
 if __name__ == '__main__':
     # NOTICE: The "output" dir is where the generator is located as with main.py, even though it is the "input" here
@@ -184,8 +184,8 @@ if __name__ == '__main__':
         archive,
         np.zeros(n_features),
         1.0,
-        batch_size=batch_size,
-    )] for _ in range(5)
+        batch_size=batch_size
+        ) for _ in range(1)]
     optimizer = Optimizer(archive, emitters)
 
 
@@ -212,7 +212,7 @@ if __name__ == '__main__':
         ray.init()
 
     #pyribs ask/tell loop
-    n_generation =10000
+    n_generation =20
     
     for i in range(n_generation):
         

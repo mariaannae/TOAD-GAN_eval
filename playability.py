@@ -6,7 +6,7 @@ import torch
 from mario.level_utils import one_hot_to_ascii_level, group_to_token, token_to_group, read_level, place_a_mario_token
 from mario.level_image_gen import LevelImageGen
 
-from utils import load_level, play_level, LevelObject
+from utils import LevelObject
 from py4j.java_gateway import JavaGateway
 from tkinter import *
 from PIL import ImageTk, Image, ImageDraw
@@ -79,7 +79,26 @@ def test_playability(vec, token_list):
         error_msg.set("Level loaded")
 
     # Play the level
-    perc = play_level(level_obj, game, gateway, render_mario)
+    #   
+    perc = 0
+    try:
+        result = game.gameLoop(''.join(level_obj.ascii_level), 20, 0, render_mario, 1000000)
+        perc = int(result.getCompletionPercentage() * 100)
+        error_msg.set("Level Played. Completion Percentage: %d%%" % perc)
+    except Exception:
+        error_msg.set("Level Play was interrupted.")
+        is_loaded.set(True)
+    finally:
+        # game.getWindow().dispose()
+        gateway.java_process.kill()
+        #gateway.close()
+        gateway.shutdown()
+
+    is_loaded.set(True)
+    # use_gen.set(remember_use_gen)  # only set use_gen to True if it was previously
+    return perc
+    
+    
     return perc
 
 
