@@ -21,7 +21,7 @@ from generate_noise import generate_spatial_noise
 from generate_samples_cmaes import generate_samples_cmaes
 from models import load_trained_pyramid
 
-from metrics import platform_test_vec, num_jumps
+from metrics import platform_test_vec, num_jumps, hamming_dist
 from random_network import create_random_network
 from playability import test_playability
 
@@ -30,7 +30,6 @@ from ribs.emitters import ImprovementEmitter, OptimizingEmitter
 from ribs.optimizers import Optimizer
 from ribs.visualize import grid_archive_heatmap
 
-from xvfbwrapper import Xvfb
 import ray
 
 #(pid=1120939) evaluate.py:42: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
@@ -49,6 +48,7 @@ def multi_fit_func(solution, device, generators, num_layer, rand_network, reals,
     score_play = 0.0
     score_platform = 0.0
     score_jumps = 0.0
+    score_hamming = 0.0
 
     for level in levels:
 
@@ -57,13 +57,15 @@ def multi_fit_func(solution, device, generators, num_layer, rand_network, reals,
 
         score_platform += platform_test_vec(level, opt.token_list)
 
-        score_jumps += num_jumps(level, opt.token_list)
+        #score_jumps += num_jumps(level, opt.token_list)
+        score_hamming += hamming_dist(level, opt)
 
-    score_play = (score_play/float(len(levels)))
+    score_play = score_play/float(len(levels))
     score_platform = float(score_platform)/float(len(levels))
-    score_jumps = float(score_jumps)/float(len(levels))
+    #score_jumps = float(score_jumps)/float(len(levels))
+    score_hamming = score_hamming/float(len(levels))
 
-    return score_play, score_platform, score_jumps
+    return score_play, score_platform, score_hamming
 
 def fit_func(solution, device, generators, num_layer, rand_network, reals, noise_amplitudes, opt, in_s, scale_v, scale_h, save_dir, num_samples):
 
@@ -77,6 +79,7 @@ def fit_func(solution, device, generators, num_layer, rand_network, reals, noise
     score_play = 0.0
     score_platform = 0.0
     score_jumps = 0.0
+    score_hamming = 0.0
 
     for level in levels:
 
@@ -85,13 +88,16 @@ def fit_func(solution, device, generators, num_layer, rand_network, reals, noise
 
         score_platform += platform_test_vec(level, opt.token_list)
 
-        score_jumps += num_jumps(level, opt.token_list)
+        #score_jumps += num_jumps(level, opt.token_list)
+        score_hamming += hamming_dist(level, opt)
 
-    score_play = (score_play/float(len(levels)))
+    score_play = score_play/float(len(levels))
     score_platform = float(score_platform)/float(len(levels))
-    score_jumps = float(score_jumps)/float(len(levels))
+    #score_jumps = float(score_jumps)/float(len(levels))
+    score_hamming = score_hamming/float(len(levels))
 
-    return score_play, score_platform, score_jumps
+    return score_play, score_platform, score_hamming
+
 
 
 def tb_logging(archive, itr, start_time, logdir, score):
@@ -115,6 +121,7 @@ if __name__ == '__main__':
     parse.add_argument("--gen_start_scale", type=int, help="scale to start generating in", default=0)
     parse.add_argument("--num_samples", type=int, help="number of samples to be generated", default=10)
     parse.add_argument("--multiproc", action="store_true", help="run with multiprocessing", default=False)
+    parse.add_argument("--vdisplay", action="store_true", help="run with a virtual display", default=False)
 
     opt = parse.parse_args()
 
@@ -176,7 +183,7 @@ if __name__ == '__main__':
 #evolutionary search implementation
 
     # archive, emitter, and optimizer for cma-es
-    n_features = 100 #number of input features for the noise vector generator
+    n_features = 500 #number of input features for the noise vector generator
     batch_size = 10
     n_bins = [20, 20]
     archive = GridArchive(n_bins, [(0, 200), (0, 100)]) # objs are platform mismatches, jumps
@@ -205,14 +212,16 @@ if __name__ == '__main__':
     torch.save(rand_network.state_dict(),  logdir+"/model")
 
     #create virtual display
-    xvfb = Xvfb()
-    xvfb.start()
+    if opt.vdisplay:
+        from xvfbwrapper import Xvfb
+        xvfb = Xvfb()
+        xvfb.start()
 
     if opt.multiproc:
         ray.init()
 
     #pyribs ask/tell loop
-    n_generation =20
+    n_generation =10000
     
     for i in range(n_generation):
         

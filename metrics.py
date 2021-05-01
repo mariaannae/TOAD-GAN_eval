@@ -39,3 +39,19 @@ def num_jumps(vec, token_list):
     
     platforms = merged_level.split()
     return max(len(platforms)-1, 0)
+
+def hamming_dist(vec, opt):
+    ascii_level = one_hot_to_ascii_level(vec.detach(), opt.token_list)
+
+    ref_level = []
+    path = opt.input_dir + '/' + opt.input_name
+    with open(path, "r") as f:
+        for line in f:
+            ref_level.append(line)
+  
+    hamming = 0
+    for i in range(len(ref_level)):
+        for j in range(len(ref_level[0])):
+            if ref_level[i][j] == 'X': #ref_level[i][j]:
+                hamming += 1.0
+    return hamming
