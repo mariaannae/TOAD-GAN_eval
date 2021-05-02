@@ -87,7 +87,6 @@ def fit_func(solution, device, generators, num_layer, rand_network, reals, noise
         score_play+=playable
 
         score_platform += platform_test_vec(level, opt.token_list)
-
         #score_jumps += num_jumps(level, opt.token_list)
         score_hamming += hamming_dist(level, opt)
 
@@ -109,6 +108,8 @@ def tb_logging(archive, itr, start_time, logdir, score):
     writer.add_scalar('score/min', df['objective'].min(), itr)
     writer.add_scalar('playability', score, itr)
     writer.add_scalar('seconds/generation', elapsed_time, itr)
+
+
 
 if __name__ == '__main__':
     # NOTICE: The "output" dir is where the generator is located as with main.py, even though it is the "input" here

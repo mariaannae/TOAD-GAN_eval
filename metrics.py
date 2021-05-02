@@ -45,13 +45,20 @@ def hamming_dist(vec, opt):
 
     ref_level = []
     path = opt.input_dir + '/' + opt.input_name
+    hamming = 0
+
     with open(path, "r") as f:
         for line in f:
-            ref_level.append(line)
-  
-    hamming = 0
+            ref_level.append(line)  
+
     for i in range(len(ref_level)):
         for j in range(len(ref_level[0])):
-            if ref_level[i][j] == 'X': #ref_level[i][j]:
-                hamming += 1.0
-    return hamming
+            if i== 15 and j==202:
+                pass
+            else:
+                if ascii_level[i][j] != ref_level[i][j]:
+                    hamming += 1.0
+
+    hamming_score = hamming/(float(len(ref_level))*float(len(ref_level[0])))
+
+    return hamming_score
