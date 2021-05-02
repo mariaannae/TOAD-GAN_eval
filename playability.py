@@ -10,7 +10,6 @@ from utils import LevelObject
 from py4j.java_gateway import JavaGateway
 from tkinter import *
 from PIL import ImageTk, Image, ImageDraw
-from xvfbwrapper import Xvfb
 
 # Path to the AI Framework jar for Playing levels
 MARIO_AI_PATH = os.path.abspath(os.path.join(os.path.curdir, "Mario-AI-Framework/mario-1.0-SNAPSHOT.jar"))
