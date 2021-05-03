@@ -83,28 +83,28 @@ def fit_func(solution, device, generators, num_layer, rand_network, reals, noise
 
     score_play = 0.0
     score_platform = 0.0
-    score_jumps = 0.0
     score_hamming = 0.0
     score_kl_divergence = 0.0
+    score_time = 0.0
+    score_max_jump = 0.0
+
 
     for level in levels:
 
-        playable = test_playability(level, opt.token_list)
-        score_play+=playable
-
-        #score_platform += platform_test_vec(level, opt.token_list)
-
+        perc, timeLeft, jumps, max_jump = test_playability(level, opt.token_list)
+        
+        score_play += perc
         #score_jumps += num_jumps(level, opt.token_list)
+        score_jumps += jumps
+        score_max_jumps += max_jump
+        score_time += timeLeft
+
+        score_platform += platform_test_vec(level, opt.token_list)
         score_hamming += hamming_dist(level, opt)
 
         kl, _ = compute_kl_divergence(level, opt)
         score_kl_divergence += kl
-
-    score_play = score_play/float(len(levels))
-    score_platform = float(score_platform)/float(len(levels))
-    #score_jumps = float(score_jumps)/float(len(levels))
-    score_hamming = score_hamming/float(len(levels))
-    score_hamming = score_hamming/float(len(levels))
+)
 
     return score_play, score_kl_divergence, score_hamming
 
