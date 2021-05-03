@@ -54,14 +54,21 @@ def multi_fit_func(solution, device, generators, num_layer, rand_network, reals,
     score_max_jump = 0.0
     score_jumps = 0.0
     score_ncd = 0.0
+    mario_end_state = -1 #0 if completed, 1 if timeout, 2 if killed
 
 
     for level in levels:
 
         perc, timeLeft, jumps, max_jump = test_playability(level, opt.token_list)
         
-        if perc<100:
-            timeLeft = 0
+        if perc == 100:
+            mario_end_state = 0
+        else:
+            if timeLeft == 0:
+                mario_end_state = 1
+            else:
+                timeLeft = 0
+                mario_end_state = 2
             
         score_play += 100-perc
         #score_jumps += num_jumps(level, opt.token_list)
@@ -76,9 +83,9 @@ def multi_fit_func(solution, device, generators, num_layer, rand_network, reals,
         kl, _ = compute_kl_divergence(level, opt)
         score_kl_divergence += kl
 
-    return score_play, score_hamming, score_ncd
+    return score_play, score_hamming, score_ncd, mario_end_state
     
-    
+
 def fit_func(solution, device, generators, num_layer, rand_network, reals, noise_amplitudes, opt, in_s, scale_v, scale_h, save_dir, num_samples):
    
     #create the noise generator
@@ -96,14 +103,21 @@ def fit_func(solution, device, generators, num_layer, rand_network, reals, noise
     score_max_jump = 0.0
     score_jumps = 0.0
     score_ncd = 0.0
+    mario_end_state = -1 #0 if completed, 1 if timeout, 2 if killed
 
 
     for level in levels:
 
         perc, timeLeft, jumps, max_jump = test_playability(level, opt.token_list)
         
-        if perc<100:
-            timeLeft = 0
+        if perc == 100:
+            mario_end_state = 0
+        else:
+            if timeLeft == 0:
+                mario_end_state = 1
+            else:
+                timeLeft = 0
+                mario_end_state = 2
             
         score_play += 100-perc
         #score_jumps += num_jumps(level, opt.token_list)
@@ -118,9 +132,9 @@ def fit_func(solution, device, generators, num_layer, rand_network, reals, noise
         kl, _ = compute_kl_divergence(level, opt)
         score_kl_divergence += kl
 
-    return score_play, score_hamming, score_ncd
+    return score_play, score_hamming, score_ncd, mario_end_state
 
-def tb_logging(archive, itr, start_time, logdir, score, bc0, bc1):
+def tb_logging(archive, itr, start_time, logdir, score, bc0, bc1, end_states):
     # TensorBoard Logging
     
     if type(archive) is not int: 
@@ -129,10 +143,17 @@ def tb_logging(archive, itr, start_time, logdir, score, bc0, bc1):
         writer.add_scalar('score/max', df['objective'].max(), itr)
         writer.add_scalar('score/min', df['objective'].min(), itr)
 
+    completed = [1 for entry in end_states if entry==0]
+    timeouts = [1 for entry in end_states if entry==1]
+    killed = [1 for entry in end_states if entry==2]
+
     elapsed_time = time.time() - start_time
+    writer.add_scalar('playability', score, itr)
     writer.add_scalar('behavior 0', bc0, itr)
     writer.add_scalar('behavior 1', bc1, itr)
-    writer.add_scalar('playability', score, itr)
+    writer.add_scalar("completed", 100*float(sum(completed))/float(len(end_states)), itr)
+    writer.add_scalar("timeouts", 100*float(sum(timeouts))/float(len(end_states)), itr)
+    writer.add_scalar("killed", 100*float(sum(killed))/float(len(end_states)), itr)
     writer.add_scalar('seconds/generation', elapsed_time, itr)
 
 
@@ -269,12 +290,15 @@ if __name__ == '__main__':
             playable = 0
             bc0 = 0
             bc1 = 0
+            end_states = []
+
             for result in results:
                 bcs.append([result[1], result[2]])
                 objectives.append(result[0])
                 playable+=result[0]
                 bc0+=result[1]
                 bc1+=result[2]
+                end_states.append(result[3])
 
             optimizer.tell(objectives, bcs)
 
@@ -282,7 +306,7 @@ if __name__ == '__main__':
             bc0 = bc0/float(len(objectives))
             bc1 = bc1/float(len(objectives))
 
-            tb_logging(archive, i, start_time, logdir, playable, bc0, bc1)
+            tb_logging(archive, i, start_time, logdir, playable, bc0, bc1, end_states)
 
             if i % 100 == 0:
                 #generate a heatmap
@@ -352,12 +376,15 @@ if __name__ == '__main__':
             playable = 0
             bc0 = 0
             bc1 = 0
+            end_states = []
+
             for result in results:
                 bcs.append([result[1], result[2]])
                 objectives.append(result[0])
                 playable+=result[0]
                 bc0+=result[1]
                 bc1+=result[2]
+                end_states.append(result[3])
 
             es.tell(solutions, objectives)
 
@@ -366,7 +393,7 @@ if __name__ == '__main__':
             bc1 = bc1/float(len(objectives))
             
             archive = 0
-            tb_logging(archive, i, start_time, logdir, playable, bc0, bc1)
+            tb_logging(archive, i, start_time, logdir, playable, bc0, bc1, end_states)
 
             
             i += 1
