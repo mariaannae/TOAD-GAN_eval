@@ -85,9 +85,10 @@ def test_playability(vec, token_list):
         perc = int(result.getCompletionPercentage() * 100)
         timeLeft = result.getRemainingTime() # time remaining in the countdown
         jumps = result.getNumJumps() # number of jumps performed by mario during the game
-        max_jump = getMaxXJump() #maximum x distance traversed by mario during a jump
+        max_jump = result.getMaxXJump() #maximum x distance traversed by mario during a jump
 
         error_msg.set("Level Played. Completion Percentage: %d%%" % perc)
+        
     except Exception:
         error_msg.set("Level Play was interrupted.")
         is_loaded.set(True)
