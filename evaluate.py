@@ -30,9 +30,10 @@ from ribs.emitters import ImprovementEmitter, OptimizingEmitter
 from ribs.optimizers import Optimizer
 from ribs.visualize import grid_archive_heatmap
 
+from cma import CMAEvolutionStrategy
+
 import ray
 
-#(pid=1120939) evaluate.py:42: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.clone().detach() or sourceTensor.clone().detach().requires_grad_(True), rather than torch.tensor(sourceTensor).
 
 #define the fitness function:
 @ray.remote
@@ -47,33 +48,35 @@ def multi_fit_func(solution, device, generators, num_layer, rand_network, reals,
 
     score_play = 0.0
     score_platform = 0.0
-    score_jumps = 0.0
     score_hamming = 0.0
     score_kl_divergence = 0.0
+    score_time = 0.0
+    score_max_jump = 0.0
+    score_jumps = 0.0
+
 
     for level in levels:
 
-        playable = test_playability(level, opt.token_list)
-        score_play+=playable
-
-        #score_platform += platform_test_vec(level, opt.token_list)
-
+        perc, timeLeft, jumps, max_jump = test_playability(level, opt.token_list)
+        
+        if perc<100:
+            timeLeft = 0
+            
+        score_play += perc
         #score_jumps += num_jumps(level, opt.token_list)
+        score_jumps += jumps
+        score_max_jump += max_jump
+        score_time += timeLeft
+
+        score_platform += platform_test_vec(level, opt.token_list)
         score_hamming += hamming_dist(level, opt)
 
         kl, _ = compute_kl_divergence(level, opt)
         score_kl_divergence += kl
 
-    score_play = score_play/float(len(levels))
-    score_platform = float(score_platform)/float(len(levels))
-    #score_jumps = float(score_jumps)/float(len(levels))
-    score_hamming = score_hamming/float(len(levels))
-    score_hamming = score_hamming/float(len(levels))
-
-    return score_play, score_kl_divergence, score_hamming
-
+    return score_play, score_hamming, score_kl_divergence
+    
 def fit_func(solution, device, generators, num_layer, rand_network, reals, noise_amplitudes, opt, in_s, scale_v, scale_h, save_dir, num_samples):
-
     #create the noise generator
     solution = solution.clone().detach().to(device)
     noise_vector = rand_network(solution).flatten().to(device)
@@ -87,16 +90,17 @@ def fit_func(solution, device, generators, num_layer, rand_network, reals, noise
     score_kl_divergence = 0.0
     score_time = 0.0
     score_max_jump = 0.0
+    score_jumps = 0.0
 
 
     for level in levels:
 
         perc, timeLeft, jumps, max_jump = test_playability(level, opt.token_list)
         
-        score_play += perc
+        score_play += 100-perc
         #score_jumps += num_jumps(level, opt.token_list)
         score_jumps += jumps
-        score_max_jumps += max_jump
+        score_max_jump += max_jump
         score_time += timeLeft
 
         score_platform += platform_test_vec(level, opt.token_list)
@@ -104,19 +108,20 @@ def fit_func(solution, device, generators, num_layer, rand_network, reals, noise
 
         kl, _ = compute_kl_divergence(level, opt)
         score_kl_divergence += kl
-)
-
-    return score_play, score_kl_divergence, score_hamming
 
 
+    return score_play, score_hamming, score_kl_divergence
 
 def tb_logging(archive, itr, start_time, logdir, score, bc0, bc1):
     # TensorBoard Logging
-    df = archive.as_pandas(include_solutions=False)
+    
+    if type(archive) is not int: 
+        df = archive.as_pandas(include_solutions=False)
+        writer.add_scalar('score/mean', df['objective'].mean(), itr)
+        writer.add_scalar('score/max', df['objective'].max(), itr)
+        writer.add_scalar('score/min', df['objective'].min(), itr)
+
     elapsed_time = time.time() - start_time
-    writer.add_scalar('score/mean', df['objective'].mean(), itr)
-    writer.add_scalar('score/max', df['objective'].max(), itr)
-    writer.add_scalar('score/min', df['objective'].min(), itr)
     writer.add_scalar('behavior 0', bc0, itr)
     writer.add_scalar('behavior 1', bc1, itr)
     writer.add_scalar('playability', score, itr)
@@ -136,6 +141,7 @@ if __name__ == '__main__':
     parse.add_argument("--num_samples", type=int, help="number of samples to be generated", default=10)
     parse.add_argument("--multiproc", action="store_true", help="run with multiprocessing", default=False)
     parse.add_argument("--vdisplay", action="store_true", help="run with a virtual display", default=False)
+    parse.add_argument("--pycma", action="store_true", help="run with pycma instead of pyribs", default = False)
 
     opt = parse.parse_args()
 
@@ -195,95 +201,166 @@ if __name__ == '__main__':
 
 ##############################################################################################
 #evolutionary search implementation
+    if not opt.pycma:
+        # archive, emitter, and optimizer for cma-es
+        n_features = 100 #number of input features for the noise vector generator
+        batch_size = 10
+        n_bins = [20, 20]
+        archive = GridArchive(n_bins, [(0, 1), (0, 10)]) # behavior 0, behavior 1
+        emitters = [OptimizingEmitter(
+            archive,
+            np.zeros(n_features),
+            1.0,
+            batch_size=batch_size
+            ) for _ in range(2)]
+        optimizer = Optimizer(archive, emitters)
 
-    # archive, emitter, and optimizer for cma-es
-    n_features = 500 #number of input features for the noise vector generator
-    batch_size = 10
-    n_bins = [10, 10]
-    archive = GridArchive(n_bins, [(0, 10), (0, 1)]) # behavior 0, behavior 1
-    emitters = [OptimizingEmitter(
-        archive,
-        np.zeros(n_features),
-        1.0,
-        batch_size=batch_size
-        ) for _ in range(1)]
-    optimizer = Optimizer(archive, emitters)
 
+        #get the size of the noise map that TOAD-GAN will need
+        vec_size = 0
+        n_pad = int(1*opt.num_layer)
+        for noise_map in noise_maps:
+            nzx = int(round((noise_map.shape[-2] - n_pad * 2) * opt.scale_v))
+            nzy = int(round((noise_map.shape[-1] - n_pad * 2) * opt.scale_h))
+            vec_size += 12*nzx*nzy*opt.num_samples
 
-    #get the size of the noise map that TOAD-GAN will need
-    vec_size = 0
-    n_pad = int(1*opt.num_layer)
-    for noise_map in noise_maps:
-        nzx = int(round((noise_map.shape[-2] - n_pad * 2) * opt.scale_v))
-        nzy = int(round((noise_map.shape[-1] - n_pad * 2) * opt.scale_h))
-        vec_size += 12*nzx*nzy*opt.num_samples
+        #create a random network that will take a vector from the emitter and generate a larger vector to feed into toad-gan
+        rand_network = create_random_network(n_features, vec_size, opt.device).to(opt.device)
+        rand_network.eval()
 
-    #create a random network that will take a vector from the emitter and generate a larger vector to feed into toad-gan
-    rand_network = create_random_network(n_features, vec_size, opt.device).to(opt.device)
-    rand_network.eval()
+        #the model will not be trained, so we only need to save it once for reproduceability
+        torch.save(rand_network.state_dict(),  logdir+"/model")
 
-    #the model will not be trained, so we only need to save it once for reproduceability
-    torch.save(rand_network.state_dict(),  logdir+"/model")
+        #create virtual display
+        if opt.vdisplay:
+            from xvfbwrapper import Xvfb
+            xvfb = Xvfb()
+            xvfb.start()
 
-    #create virtual display
-    if opt.vdisplay:
-        from xvfbwrapper import Xvfb
-        xvfb = Xvfb()
-        xvfb.start()
-
-    if opt.multiproc:
-        ray.init()
-
-    #pyribs ask/tell loop
-    n_generation =10000
-    
-    for i in range(n_generation):
-        
-        start_time = time.time()
-        solutions = optimizer.ask()
-        solutions =(torch.from_numpy(solutions).float()).to(opt.device)
-
-        bcs = []
-        objectives = []
-        
         if opt.multiproc:
-            futures = [multi_fit_func.remote(solution, opt.device, generators, opt.num_layer, rand_network, reals, noise_amplitudes, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples) for solution in solutions]
-            results = ray.get(futures)
-        else:
-            results = [fit_func(solution, opt.device, generators, opt.num_layer, rand_network, reals, noise_amplitudes, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples) for solution in solutions]
+            ray.init()
 
-        playable = 0
-        bc0 = 0
-        bc1 = 0
-        for result in results:
-            bcs.append([result[1], result[2]])
-            objectives.append(result[0])
-            playable+=result[0]
-            bc0+=result[1]
-            bc1+=result[2]
+        #pyribs ask/tell loop
+        n_generation =100000
+    
+        for i in range(n_generation):
+            
+            start_time = time.time()
+            solutions = optimizer.ask()
+            solutions =(torch.from_numpy(solutions).float()).to(opt.device)
 
-        optimizer.tell(objectives, bcs)
+            bcs = []
+            objectives = []
+            
+            if opt.multiproc:
+                futures = [multi_fit_func.remote(solution, opt.device, generators, opt.num_layer, rand_network, reals, noise_amplitudes, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples) for solution in solutions]
+                results = ray.get(futures)
+            else:
+                results = [fit_func(solution, opt.device, generators, opt.num_layer, rand_network, reals, noise_amplitudes, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples) for solution in solutions]
 
-        playable = playable/float(len(objectives))
-        bc0 = bc0/float(len(objectives))
-        bc1 = bc1/float(len(objectives))
+            playable = 0
+            bc0 = 0
+            bc1 = 0
+            for result in results:
+                bcs.append([result[1], result[2]])
+                objectives.append(result[0])
+                playable+=result[0]
+                bc0+=result[1]
+                bc1+=result[2]
 
-        tb_logging(archive, i, start_time, logdir, playable, bc0, bc1)
+            optimizer.tell(objectives, bcs)
 
-        if i % 10 == 0:
-            #generate a heatmap
-            plt.figure(figsize=(8,6))
-            grid_archive_heatmap(archive)
-            plt.title("Playability")
-            plt.xlabel("Tile Pattern KL Divergence") #objective 0
-            plt.ylabel("Hamming Distance") #objective 1
-            figname = '/map_' + str(i)
-            plt.savefig(logdir + figname)
-            plt.close()
+            playable = playable/float(len(objectives))
+            bc0 = bc0/float(len(objectives))
+            bc1 = bc1/float(len(objectives))
 
-            #save the archive
-            df = archive.as_pandas(include_solutions=True)
-            df.to_pickle(logdir + "/archive.zip")
+            tb_logging(archive, i, start_time, logdir, playable, bc0, bc1)
+
+            if i % 100 == 0:
+                #generate a heatmap
+                plt.figure(figsize=(8,6))
+                grid_archive_heatmap(archive)
+                plt.title("Inverse Playability")
+                plt.xlabel("Hamming Distance") #objective 0
+                plt.ylabel("Tile Pattern KL Divergence") #objective 1
+                figname = '/map_' + str(i)
+                plt.savefig(logdir + figname)
+                plt.close()
+
+                #save the archive
+                df = archive.as_pandas(include_solutions=True)
+                df.to_pickle(logdir + "/archive.zip")
 
 
-        
+    else:
+    ##############################################################################################
+    #cma-es implementation
+    
+        n_features = 100 #number of input features for the noise vector generator. other tolerance options available.
+
+        #get the size of the noise map that TOAD-GAN will need
+        vec_size = 0
+        n_pad = int(1*opt.num_layer)
+        for noise_map in noise_maps:
+            nzx = int(round((noise_map.shape[-2] - n_pad * 2) * opt.scale_v))
+            nzy = int(round((noise_map.shape[-1] - n_pad * 2) * opt.scale_h))
+            vec_size += 12*nzx*nzy*opt.num_samples
+
+        rand_network = create_random_network(n_features, vec_size, opt.device).to(opt.device)
+        rand_network.eval()
+
+        #the model will not be trained, so we only need to save it once for reproduceability
+        torch.save(rand_network.state_dict(),  logdir+"/model")
+
+        #create virtual display
+        if opt.vdisplay:
+            from xvfbwrapper import Xvfb
+            xvfb = Xvfb()
+            xvfb.start()
+
+        if opt.multiproc:
+            ray.init()
+
+        #TODO:revisit sigma
+        es = CMAEvolutionStrategy(torch.randn(n_features), sigma0 = .5)
+
+        i = 0
+        scores = []
+        n_generation = 10000
+        while not es.stop() and i < n_generation:
+            start_time = time.time()
+            solutions = es.ask()
+
+            #calculate fitness
+            objectives = []
+            bcs = []
+            
+            if opt.multiproc:
+                futures = [multi_fit_func.remote(torch.from_numpy(solution).float(), opt.device, generators, opt.num_layer, rand_network, reals, noise_amplitudes, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples) for solution in solutions]
+                results = ray.get(futures)
+            else:
+                results = [fit_func(torch.from_numpy(solution).float(), opt.device, generators, opt.num_layer, rand_network, reals, noise_amplitudes, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples) for solution in solutions]
+
+            playable = 0
+            bc0 = 0
+            bc1 = 0
+            for result in results:
+                bcs.append([result[1], result[2]])
+                objectives.append(result[0])
+                playable+=result[0]
+                bc0+=result[1]
+                bc1+=result[2]
+
+            es.tell(solutions, objectives)
+
+            playable = 100-playable/float(len(objectives))
+            bc0 = bc0/float(len(objectives))
+            bc1 = bc1/float(len(objectives))
+            
+            archive = 0
+            tb_logging(archive, i, start_time, logdir, playable, bc0, bc1)
+
+            
+            i += 1
+
+            

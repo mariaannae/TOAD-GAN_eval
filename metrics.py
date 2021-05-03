@@ -1,5 +1,6 @@
 #import random
 from mario.level_utils import one_hot_to_ascii_level, ascii_to_one_hot_level
+from mario.tokens import ENEMY_TOKENS
 from level_snippet_dataset_cmaes import LevelSnippetDataset
 import collections, math
 from tqdm import tqdm
@@ -66,7 +67,6 @@ def hamming_dist(vec, opt):
     hamming_score = hamming/(float(len(ref_level))*float(len(ref_level[0])))
 
     return hamming_score
-
 
 def pattern_key(level_slice):
     """
