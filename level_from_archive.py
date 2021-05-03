@@ -127,9 +127,9 @@ if __name__ == '__main__':
 
     noise = rand_network(solution).detach()
     
-    level = generate_samples_cmaes(generators, noise_maps, reals, noise_amplitudes, noise, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=1)
+    levels = generate_samples_cmaes(generators, noise_maps, reals, noise_amplitudes, noise, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=1)
 
-    level = level[0]
+    level = levels[0]
     ascii_level = one_hot_to_ascii_level(level, opt.token_list)
 
     img = opt.ImgGen.render(ascii_level)

@@ -21,7 +21,7 @@ from generate_noise import generate_spatial_noise
 from generate_samples_cmaes import generate_samples_cmaes
 from models import load_trained_pyramid
 
-from metrics import platform_test_vec, num_jumps, hamming_dist
+from metrics import platform_test_vec, num_jumps, hamming_dist, compute_kl_divergence
 from random_network import create_random_network
 from playability import test_playability
 
@@ -49,23 +49,28 @@ def multi_fit_func(solution, device, generators, num_layer, rand_network, reals,
     score_platform = 0.0
     score_jumps = 0.0
     score_hamming = 0.0
+    score_kl_divergence = 0.0
 
     for level in levels:
 
         playable = test_playability(level, opt.token_list)
         score_play+=playable
 
-        score_platform += platform_test_vec(level, opt.token_list)
+        #score_platform += platform_test_vec(level, opt.token_list)
 
         #score_jumps += num_jumps(level, opt.token_list)
         score_hamming += hamming_dist(level, opt)
+
+        kl, _ = compute_kl_divergence(level, opt)
+        score_kl_divergence += kl
 
     score_play = score_play/float(len(levels))
     score_platform = float(score_platform)/float(len(levels))
     #score_jumps = float(score_jumps)/float(len(levels))
     score_hamming = score_hamming/float(len(levels))
+    score_hamming = score_hamming/float(len(levels))
 
-    return score_play, score_platform, score_hamming
+    return score_play, score_kl_divergence, score_hamming
 
 def fit_func(solution, device, generators, num_layer, rand_network, reals, noise_amplitudes, opt, in_s, scale_v, scale_h, save_dir, num_samples):
 
@@ -80,32 +85,40 @@ def fit_func(solution, device, generators, num_layer, rand_network, reals, noise
     score_platform = 0.0
     score_jumps = 0.0
     score_hamming = 0.0
+    score_kl_divergence = 0.0
 
     for level in levels:
 
         playable = test_playability(level, opt.token_list)
         score_play+=playable
 
-        score_platform += platform_test_vec(level, opt.token_list)
+        #score_platform += platform_test_vec(level, opt.token_list)
+
         #score_jumps += num_jumps(level, opt.token_list)
         score_hamming += hamming_dist(level, opt)
+
+        kl, _ = compute_kl_divergence(level, opt)
+        score_kl_divergence += kl
 
     score_play = score_play/float(len(levels))
     score_platform = float(score_platform)/float(len(levels))
     #score_jumps = float(score_jumps)/float(len(levels))
     score_hamming = score_hamming/float(len(levels))
+    score_hamming = score_hamming/float(len(levels))
 
-    return score_play, score_platform, score_hamming
+    return score_play, score_kl_divergence, score_hamming
 
 
 
-def tb_logging(archive, itr, start_time, logdir, score):
+def tb_logging(archive, itr, start_time, logdir, score, bc0, bc1):
     # TensorBoard Logging
     df = archive.as_pandas(include_solutions=False)
     elapsed_time = time.time() - start_time
     writer.add_scalar('score/mean', df['objective'].mean(), itr)
     writer.add_scalar('score/max', df['objective'].max(), itr)
     writer.add_scalar('score/min', df['objective'].min(), itr)
+    writer.add_scalar('behavior 0', bc0, itr)
+    writer.add_scalar('behavior 1', bc1, itr)
     writer.add_scalar('playability', score, itr)
     writer.add_scalar('seconds/generation', elapsed_time, itr)
 
@@ -186,8 +199,8 @@ if __name__ == '__main__':
     # archive, emitter, and optimizer for cma-es
     n_features = 500 #number of input features for the noise vector generator
     batch_size = 10
-    n_bins = [20, 20]
-    archive = GridArchive(n_bins, [(0, 200), (0, 100)]) # objs are platform mismatches, jumps
+    n_bins = [10, 10]
+    archive = GridArchive(n_bins, [(0, 10), (0, 1)]) # behavior 0, behavior 1
     emitters = [OptimizingEmitter(
         archive,
         np.zeros(n_features),
@@ -232,41 +245,38 @@ if __name__ == '__main__':
 
         bcs = []
         objectives = []
-        playable = 0
-
-        platform = 0
-        num_levels = 0
-
+        
         if opt.multiproc:
             futures = [multi_fit_func.remote(solution, opt.device, generators, opt.num_layer, rand_network, reals, noise_amplitudes, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples) for solution in solutions]
             results = ray.get(futures)
         else:
             results = [fit_func(solution, opt.device, generators, opt.num_layer, rand_network, reals, noise_amplitudes, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples) for solution in solutions]
 
+        playable = 0
+        bc0 = 0
+        bc1 = 0
         for result in results:
             bcs.append([result[1], result[2]])
             objectives.append(result[0])
-
-            #playability tracking
-            playable+=result[0]/opt.num_samples
-            num_levels+=opt.num_samples
-
-            #platform tracking
-            platform+=result[1]
-
-        playable = (float(playable)/float(num_levels))
+            playable+=result[0]
+            bc0+=result[1]
+            bc1+=result[2]
 
         optimizer.tell(objectives, bcs)
 
-        tb_logging(archive, i, start_time, logdir, playable)
+        playable = playable/float(len(objectives))
+        bc0 = bc0/float(len(objectives))
+        bc1 = bc1/float(len(objectives))
+
+        tb_logging(archive, i, start_time, logdir, playable, bc0, bc1)
 
         if i % 10 == 0:
             #generate a heatmap
             plt.figure(figsize=(8,6))
             grid_archive_heatmap(archive)
             plt.title("Playability")
-            plt.xlabel("Platform Solidity")
-            plt.ylabel("Number of Jumps")
+            plt.xlabel("Tile Pattern KL Divergence") #objective 0
+            plt.ylabel("Hamming Distance") #objective 1
             figname = '/map_' + str(i)
             plt.savefig(logdir + figname)
             plt.close()
