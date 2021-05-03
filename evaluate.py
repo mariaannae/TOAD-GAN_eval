@@ -21,7 +21,7 @@ from generate_noise import generate_spatial_noise
 from generate_samples_cmaes import generate_samples_cmaes
 from models import load_trained_pyramid
 
-from metrics import platform_test_vec, num_jumps, hamming_dist, compute_kl_divergence
+from metrics import platform_test_vec, num_jumps, hamming_dist, compute_kl_divergence, normalized_compression_div
 from random_network import create_random_network
 from playability import test_playability
 
@@ -53,6 +53,7 @@ def multi_fit_func(solution, device, generators, num_layer, rand_network, reals,
     score_time = 0.0
     score_max_jump = 0.0
     score_jumps = 0.0
+    score_ncd = 0.0
 
 
     for level in levels:
@@ -62,21 +63,24 @@ def multi_fit_func(solution, device, generators, num_layer, rand_network, reals,
         if perc<100:
             timeLeft = 0
             
-        score_play += perc
+        score_play += 100-perc
         #score_jumps += num_jumps(level, opt.token_list)
         score_jumps += jumps
         score_max_jump += max_jump
         score_time += timeLeft
 
+        score_ncd += normalized_compression_div(level, opt)
         score_platform += platform_test_vec(level, opt.token_list)
         score_hamming += hamming_dist(level, opt)
 
         kl, _ = compute_kl_divergence(level, opt)
         score_kl_divergence += kl
 
-    return score_play, score_hamming, score_kl_divergence
+    return score_play, score_hamming, score_ncd
+    
     
 def fit_func(solution, device, generators, num_layer, rand_network, reals, noise_amplitudes, opt, in_s, scale_v, scale_h, save_dir, num_samples):
+   
     #create the noise generator
     solution = solution.clone().detach().to(device)
     noise_vector = rand_network(solution).flatten().to(device)
@@ -91,26 +95,30 @@ def fit_func(solution, device, generators, num_layer, rand_network, reals, noise
     score_time = 0.0
     score_max_jump = 0.0
     score_jumps = 0.0
+    score_ncd = 0.0
 
 
     for level in levels:
 
         perc, timeLeft, jumps, max_jump = test_playability(level, opt.token_list)
         
+        if perc<100:
+            timeLeft = 0
+            
         score_play += 100-perc
         #score_jumps += num_jumps(level, opt.token_list)
         score_jumps += jumps
         score_max_jump += max_jump
         score_time += timeLeft
 
+        score_ncd += normalized_compression_div(level, opt)
         score_platform += platform_test_vec(level, opt.token_list)
         score_hamming += hamming_dist(level, opt)
 
         kl, _ = compute_kl_divergence(level, opt)
         score_kl_divergence += kl
 
-
-    return score_play, score_hamming, score_kl_divergence
+    return score_play, score_hamming, score_ncd
 
 def tb_logging(archive, itr, start_time, logdir, score, bc0, bc1):
     # TensorBoard Logging
@@ -322,7 +330,7 @@ if __name__ == '__main__':
             ray.init()
 
         #TODO:revisit sigma
-        es = CMAEvolutionStrategy(torch.randn(n_features), sigma0 = .5)
+        es = CMAEvolutionStrategy(torch.zeros(n_features), sigma0 = 5.0)
 
         i = 0
         scores = []
@@ -353,7 +361,7 @@ if __name__ == '__main__':
 
             es.tell(solutions, objectives)
 
-            playable = 100-playable/float(len(objectives))
+            playable = 100 - playable/float(len(objectives))
             bc0 = bc0/float(len(objectives))
             bc1 = bc1/float(len(objectives))
             

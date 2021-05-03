@@ -5,6 +5,36 @@ from level_snippet_dataset_cmaes import LevelSnippetDataset
 import collections, math
 from tqdm import tqdm
 import numpy as np
+import gzip
+import sys
+
+def normalized_compression_div(vec, opt):
+    ascii_level = one_hot_to_ascii_level(vec.detach(), opt.token_list)
+
+    ref_level = []
+    path = opt.input_dir + '/' + opt.input_name
+
+    with open(path, "r") as f:
+        for line in f:
+            ref_level.append(line) 
+    
+    x, y = "", ""
+
+    for row in ascii_level:
+        x += row
+
+    for row in ref_level:
+        y += row
+
+    xy = x + y
+
+    kx = gzip.compress(x.encode('utf-8'))
+    ky = gzip.compress(y.encode('utf-8'))
+    kxy= gzip.compress(xy.encode('utf-8'))
+
+    ncd = (sys.getsizeof(kxy) - min(sys.getsizeof(kx), sys.getsizeof(ky)))/max(sys.getsizeof(kx), sys.getsizeof(ky))
+
+    return ncd
 
 def platform_test_vec(vec, token_list):
     score = 0.0
