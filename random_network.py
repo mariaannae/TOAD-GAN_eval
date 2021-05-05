@@ -8,10 +8,12 @@ def create_random_network(input_size, output_size, device):
             super(RandomNet, self).__init__()
             self.device = device
             self.main = nn.Sequential(
-                nn.Linear(in_features = input_size, out_features = output_size, bias = False)
+                nn.Linear(in_features = input_size, out_features = output_size, bias = False),
             )
+            self.norm = nn.BatchNorm1d(output_size, affine=False)
 
         def forward(self, input):
+            #return self.norm(self.main(input).unsqueeze(0)).squeeze()
             return self.main(input)
             
     return RandomNet(device)

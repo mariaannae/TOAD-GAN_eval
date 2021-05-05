@@ -40,9 +40,10 @@ if __name__ == '__main__':
     parse.add_argument("--scale_v", type=float, help="vertical scale factor", default=1.0)
     parse.add_argument("--scale_h", type=float, help="horizontal scale factor", default=1.0)
     parse.add_argument("--gen_start_scale", type=int, help="scale to start generating in", default=0)
-    parse.add_argument("--num_samples", type=int, help="number of samples to be generated", default=10)
-    parse.add_argument("--multiproc", action="store_true", help="run with multiprocessing", default=False)
+    parse.add_argument("--num_samples", type=int, help="number of samples to be generated", default=1)
     parse.add_argument("--experiment_id", type=int, help="the experiment number to load from", default = 1)
+    parse.add_argument("--n_features", type=int, help="the number of features passed to the random network by the emitter", default = 100)
+    parse.add_argument("--all", action="store_true", help="generate all levels from the selected experiment", default=False)
 
     opt = parse.parse_args()
 
@@ -52,8 +53,6 @@ if __name__ == '__main__':
     opt = post_config(opt)
     
     #setting number of samples generated to 1, so that each noise vector produced corresponds to only one generated level and is not divided into multiple levels
-    opt.num_samples = 1
-
     token_insertion = False
 
     # Init game specific inputs
@@ -81,10 +80,11 @@ if __name__ == '__main__':
     s_dir_name = "logs_cmaes/%d" % (opt.experiment_id)
 
     # archive, emitter, and optimizer for cma-es
-    n_features = 100 #number of input features for the noise vector generator
+    n_features = opt.n_features #number of input features for the noise vector generator
 
     #get the size of the noise map that TOAD-GAN will need
     vec_size = 0
+    print(opt.num_samples)
     n_pad = int(1*opt.num_layer)
     for noise_map in noise_maps:
         nzx = int(round((noise_map.shape[-2] - n_pad * 2) * opt.scale_v))
@@ -100,37 +100,65 @@ if __name__ == '__main__':
     #load the pickled archive
     df = pandas.read_pickle(s_dir_name + "/archive.zip")
  
-    #set up a new archive
-    n_bins = [20,20]
-    archive_size = [(0, 200), (0, 100)]
-    n_features = 100
-    archive = GridArchive(n_bins, archive_size)
-    archive.initialize(n_features)
+    if opt.all:
 
-    #populate the archive from the dataframe
-    for _, row in df.iterrows():
-        latent = np.array(row.loc["solution_0":])
-        bcs = row.loc[["behavior_0", "behavior_1"]]
-        obj = row.loc[["objective"]][0]
-        archive.add(solution = latent, objective_value = obj, behavior_values = bcs)
+        solutions = []
+        bcs = []
+        objs = []
 
-    bc0 = float(input("Estimated value for behavior 0 (x axis): "))
-    bc1 = float(input("Estimated value for behavior 1 (y axis): "))
-    
-    elite = archive.elite_with_behavior([bc0, bc1])
+        for _, row in df.iterrows():
+            latent = np.array(row.loc["solution_0":])
+            bc = row.loc[["behavior_0", "behavior_1"]]
+            obj = row.loc[["objective"]][0]
 
-    if type(elite[0]) is not np.ndarray:
-        print("This elite does not exist. Please try again.")
-        exit()
-    
-    solution = torch.from_numpy(elite[0]).float()
+            solutions.append(latent)
+            bcs.append(bc)
+            objs.append(obj)
+            
+        for solution, bc, obj in zip(solutions, bcs, objs):
+            solution = torch.from_numpy(solution).float()
+            noise = rand_network(solution).detach()
+            levels = generate_samples_cmaes(generators, noise_maps, reals, noise_amplitudes, noise, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=1)
+            level = levels[0]
+            ascii_level = one_hot_to_ascii_level(level, opt.token_list)
+            img = opt.ImgGen.render(ascii_level)
+            img.save("%s/elite_%.2f_%.2f.png" % (s_dir_name, bc[0], bc[1]))
 
-    noise = rand_network(solution).detach()
-    
-    levels = generate_samples_cmaes(generators, noise_maps, reals, noise_amplitudes, noise, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=1)
 
-    level = levels[0]
-    ascii_level = one_hot_to_ascii_level(level, opt.token_list)
+    else:
+        #set up a new archive
+        n_bins = [20,20]
+        archive_size = [(0, 10), (0, 1)]
 
-    img = opt.ImgGen.render(ascii_level)
-    img.save("%s/elite_%d_%d.png" % (s_dir_name, int(bc0), int(bc1)))
+        archive = GridArchive(n_bins, archive_size)
+        archive.initialize(n_features)
+
+        #populate the archive from the dataframe
+        for _, row in df.iterrows():
+            latent = np.array(row.loc["solution_0":])
+            bcs = row.loc[["behavior_0", "behavior_1"]]
+            obj = row.loc[["objective"]][0]
+            archive.add(solution = latent, objective_value = obj, behavior_values = bcs)
+
+        bc0 = float(input("Estimated value for behavior 0 (x axis): "))
+        bc1 = float(input("Estimated value for behavior 1 (y axis): "))
+        
+        elite = archive.elite_with_behavior([bc0, bc1])
+
+        if type(elite[0]) is not np.ndarray:
+            print("This elite does not exist. Please try again.")
+            exit()
+        
+        solution = torch.from_numpy(elite[0]).float()
+
+        noise = rand_network(solution).detach()
+        
+        levels = generate_samples_cmaes(generators, noise_maps, reals, noise_amplitudes, noise, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=1)
+
+        level = levels[0]
+        ascii_level = one_hot_to_ascii_level(level, opt.token_list)
+
+        img = opt.ImgGen.render(ascii_level)
+        img.save("%s/elite_%.2f_%.2f.png" % (s_dir_name, (bc0), (bc1)))
+
+        

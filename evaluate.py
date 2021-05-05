@@ -21,7 +21,7 @@ from generate_noise import generate_spatial_noise
 from generate_samples_cmaes import generate_samples_cmaes
 from models import load_trained_pyramid
 
-from metrics import platform_test_vec, num_jumps, hamming_dist, compute_kl_divergence, normalized_compression_div
+from metrics import platform_test_vec, num_jumps, hamming_dist, compute_kl_divergence, normalized_compression_dist
 from random_network import create_random_network
 from playability import test_playability
 
@@ -29,6 +29,7 @@ from ribs.archives import GridArchive
 from ribs.emitters import ImprovementEmitter, OptimizingEmitter
 from ribs.optimizers import Optimizer
 from ribs.visualize import grid_archive_heatmap
+from torchvision import transforms
 
 from cma import CMAEvolutionStrategy
 
@@ -40,13 +41,14 @@ import ray
 def multi_fit_func(solution, device, generators, num_layer, rand_network, reals, noise_amplitudes, opt, in_s, scale_v, scale_h, save_dir, num_samples):
 
     #create the noise generator
-    solution = solution.clone().detach().to(device)
+    solution = solution.clone().detach()
     noise_vector = rand_network(solution).flatten().to(device)
 
     #generate levels
     levels = generate_samples_cmaes(generators, noise_maps, reals, noise_amplitudes, noise_vector, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples)
 
     score_play = 0.0
+    score_unplay = 0.0
     score_platform = 0.0
     score_hamming = 0.0
     score_kl_divergence = 0.0
@@ -70,20 +72,23 @@ def multi_fit_func(solution, device, generators, num_layer, rand_network, reals,
                 timeLeft = 0
                 mario_end_state = 2
             
-        score_play += 100-perc
-        #score_jumps += num_jumps(level, opt.token_list)
+        score_play += perc
+        score_unplay += 100-perc
         score_jumps += jumps
         score_max_jump += max_jump
         score_time += timeLeft
 
-        score_ncd += normalized_compression_div(level, opt)
+        score_ncd += normalized_compression_dist(level, opt)
         score_platform += platform_test_vec(level, opt.token_list)
         score_hamming += hamming_dist(level, opt)
 
         kl, _ = compute_kl_divergence(level, opt)
         score_kl_divergence += kl
+    
+    obj_dict = {"ncd": score_ncd, "hamming": score_hamming, "playable": score_play, "tpkl": score_kl_divergence, "unplayable": score_unplay}
+    bc_dict = {"ncd": score_ncd, "hamming": score_hamming, "playable": score_play, "tpkl": score_kl_divergence, "time": score_time, "max_jump": score_max_jump, "n_jumps": score_jumps, "platform": score_platform}
 
-    return score_play, score_hamming, score_ncd, mario_end_state
+    return obj_dict[opt.obj], bc_dict[opt.bcs[0]], bc_dict[opt.bcs[1]], mario_end_state
     
 
 def fit_func(solution, device, generators, num_layer, rand_network, reals, noise_amplitudes, opt, in_s, scale_v, scale_h, save_dir, num_samples):
@@ -119,13 +124,13 @@ def fit_func(solution, device, generators, num_layer, rand_network, reals, noise
                 timeLeft = 0
                 mario_end_state = 2
             
-        score_play += 100-perc
+        score_play += perc
         #score_jumps += num_jumps(level, opt.token_list)
         score_jumps += jumps
         score_max_jump += max_jump
         score_time += timeLeft
 
-        score_ncd += normalized_compression_div(level, opt)
+        score_ncd += normalized_compression_dist(level, opt)
         score_platform += platform_test_vec(level, opt.token_list)
         score_hamming += hamming_dist(level, opt)
 
@@ -167,20 +172,23 @@ if __name__ == '__main__':
     parse.add_argument("--scale_v", type=float, help="vertical scale factor", default=1.0)
     parse.add_argument("--scale_h", type=float, help="horizontal scale factor", default=1.0)
     parse.add_argument("--gen_start_scale", type=int, help="scale to start generating in", default=0)
-    parse.add_argument("--num_samples", type=int, help="number of samples to be generated", default=10)
+    parse.add_argument("--num_samples", type=int, help="number of samples to be generated", default=1)
     parse.add_argument("--multiproc", action="store_true", help="run with multiprocessing", default=False)
     parse.add_argument("--vdisplay", action="store_true", help="run with a virtual display", default=False)
     parse.add_argument("--pycma", action="store_true", help="run with pycma instead of pyribs", default = False)
-
+    parse.add_argument("--obj", type=str, help = "fitness measure", default = "playable", choices=["ncd", "hamming", "playable", "tpkl", "unplayable"])
+    parse.add_argument("--bcs", type=str, help = "fitness measure", nargs = 2, required = True, choices=["ncd", "hamming", "playable", "tpkl", "time", "max_jump", "n_jumps", "n_enemies", "platform"])
+    parse.add_argument("--cma_me", action="store_true", help = "run with an improvement emitter rather than an optimizing emitter", default=False)
     opt = parse.parse_args()
 
     if (not opt.out_) and (not opt.make_mario_samples):
             parse.error('--out_ is required (--make_mario_samples experiment is the exception)')
 
     opt = post_config(opt)
-    
-    #setting number of samples generated to 1, so that each noise vector produced corresponds to only one generated level and is not divided into multiple levels
-    opt.num_samples = 1
+    bc_names = {"ncd": "Normalized Compression Distance", "hamming": "Hamming Distance", "playable": "Percentage of Level Completed", "tpkl": "Tile Pattern KL Divergence", "time": "Time Remaining After Play", "max_jump": "Maximum Jump Width", "n_jumps": "Number of Jumps Taken", "n_enemies": "Number of Enemies", "platform": "Platform Holes(by tile)"}
+    bc_ranges = {"ncd": (0, 1), "hamming": (0, 1), "playable": (0, 100), "tpkl": (0, 10), "time": (0, int(1.2e4)), "max_jump": (0, 200), "n_jumps": (0, 100), "n_enemies": (0, 50), "platform": (0, 203)}
+    obj_names = {"ncd": "Normalized Compression Distance", "hamming": "Hamming Distance", "playable": "Percentage of Level Completed", "tpkl": "Tile Pattern KL Divergence", "unplayable": "Percentage of Level Left Incomplete After Play", "max_jump": "Maximum Jump Width", "n_jumps": "Number of Jumps Taken", "n_enemies": "Number of Enemies", "platform": "Platform Holes(by tile)"}
+
 
     token_insertion = False
 
@@ -229,19 +237,31 @@ if __name__ == '__main__':
     writer = SummaryWriter(tb_logdir)
 
 ##############################################################################################
-#evolutionary search implementation
+#pyribs implementation
     if not opt.pycma:
         # archive, emitter, and optimizer for cma-es
         n_features = 100 #number of input features for the noise vector generator
         batch_size = 10
-        n_bins = [20, 20]
-        archive = GridArchive(n_bins, [(0, 1), (0, 10)]) # behavior 0, behavior 1
-        emitters = [OptimizingEmitter(
+        n_bins = [50, 50]
+        archive = GridArchive(n_bins, [bc_ranges[opt.bcs[0]], bc_ranges[opt.bcs[1]]]) # behavior 0, behavior 1
+        if opt.cma_me:
+            emitters = [ImprovementEmitter(
+                archive,
+                np.zeros(n_features),
+                1.0,
+                batch_size=batch_size
+                ) for _ in range(1)]
+        else:
+            emitters = [OptimizingEmitter(
             archive,
             np.zeros(n_features),
             1.0,
             batch_size=batch_size
-            ) for _ in range(2)]
+            ) for _ in range(1)]
+
+            for key in obj_names:
+                obj_names[key] = "Optimizing for "+obj_names[key]
+
         optimizer = Optimizer(archive, emitters)
 
 
@@ -253,6 +273,7 @@ if __name__ == '__main__':
             nzy = int(round((noise_map.shape[-1] - n_pad * 2) * opt.scale_h))
             vec_size += 12*nzx*nzy*opt.num_samples
 
+        
         #create a random network that will take a vector from the emitter and generate a larger vector to feed into toad-gan
         rand_network = create_random_network(n_features, vec_size, opt.device).to(opt.device)
         rand_network.eval()
@@ -287,7 +308,7 @@ if __name__ == '__main__':
             else:
                 results = [fit_func(solution, opt.device, generators, opt.num_layer, rand_network, reals, noise_amplitudes, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples) for solution in solutions]
 
-            playable = 0
+            
             bc0 = 0
             bc1 = 0
             end_states = []
@@ -295,14 +316,13 @@ if __name__ == '__main__':
             for result in results:
                 bcs.append([result[1], result[2]])
                 objectives.append(result[0])
-                playable+=result[0]
                 bc0+=result[1]
                 bc1+=result[2]
                 end_states.append(result[3])
 
             optimizer.tell(objectives, bcs)
 
-            playable = playable/float(len(objectives))
+            playable = max(objectives)
             bc0 = bc0/float(len(objectives))
             bc1 = bc1/float(len(objectives))
 
@@ -311,10 +331,21 @@ if __name__ == '__main__':
             if i % 100 == 0:
                 #generate a heatmap
                 plt.figure(figsize=(8,6))
+                #plt.figure(figsize=(8,2))
                 grid_archive_heatmap(archive)
-                plt.title("Inverse Playability")
-                plt.xlabel("Hamming Distance") #objective 0
-                plt.ylabel("Tile Pattern KL Divergence") #objective 1
+                plt.title(obj_names[opt.obj])
+                plt.xlabel(bc_names[opt.bcs[0]]) #objective 0
+                plt.ylabel(bc_names[opt.bcs[1]]) #objective 1
+
+                '''
+                plt.tick_params(
+                    axis='y',          # changes apply to the x-axis
+                    which='both',      # both major and minor ticks are affected
+                    left=False,      # ticks along the bottom edge are off
+                    right=False,         # ticks along the top edge are off
+                    labelleftFalse) # labels along the bottom edge are off
+                '''
+
                 figname = '/map_' + str(i)
                 plt.savefig(logdir + figname)
                 plt.close()
@@ -326,7 +357,7 @@ if __name__ == '__main__':
 
     else:
     ##############################################################################################
-    #cma-es implementation
+    #cma/pycma implementation
     
         n_features = 100 #number of input features for the noise vector generator. other tolerance options available.
 
@@ -357,7 +388,6 @@ if __name__ == '__main__':
         es = CMAEvolutionStrategy(torch.zeros(n_features), sigma0 = 5.0)
 
         i = 0
-        scores = []
         n_generation = 10000
         while not es.stop() and i < n_generation:
             start_time = time.time()

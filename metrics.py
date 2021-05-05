@@ -8,7 +8,7 @@ import numpy as np
 import gzip
 import sys
 
-def normalized_compression_div(vec, opt):
+def normalized_compression_dist(vec, opt):
     ascii_level = one_hot_to_ascii_level(vec.detach(), opt.token_list)
 
     ref_level = []
