@@ -94,13 +94,14 @@ def multi_fit_func(solution, device, generators, num_layer, rand_network, reals,
 def fit_func(solution, device, generators, num_layer, rand_network, reals, noise_amplitudes, opt, in_s, scale_v, scale_h, save_dir, num_samples):
    
     #create the noise generator
-    solution = solution.clone().detach().to(device)
+    solution = solution.clone().detach()
     noise_vector = rand_network(solution).flatten().to(device)
 
     #generate levels
     levels = generate_samples_cmaes(generators, noise_maps, reals, noise_amplitudes, noise_vector, opt, in_s=in_s, scale_v=opt.scale_v, scale_h=opt.scale_h, save_dir=s_dir_name, num_samples=opt.num_samples)
 
     score_play = 0.0
+    score_unplay = 0.0
     score_platform = 0.0
     score_hamming = 0.0
     score_kl_divergence = 0.0
@@ -125,7 +126,7 @@ def fit_func(solution, device, generators, num_layer, rand_network, reals, noise
                 mario_end_state = 2
             
         score_play += perc
-        #score_jumps += num_jumps(level, opt.token_list)
+        score_unplay += 100-perc
         score_jumps += jumps
         score_max_jump += max_jump
         score_time += timeLeft
@@ -136,8 +137,11 @@ def fit_func(solution, device, generators, num_layer, rand_network, reals, noise
 
         kl, _ = compute_kl_divergence(level, opt)
         score_kl_divergence += kl
+    
+    obj_dict = {"ncd": score_ncd, "hamming": score_hamming, "playable": score_play, "tpkl": score_kl_divergence, "unplayable": score_unplay}
+    bc_dict = {"ncd": score_ncd, "hamming": score_hamming, "playable": score_play, "tpkl": score_kl_divergence, "time": score_time, "max_jump": score_max_jump, "n_jumps": score_jumps, "platform": score_platform}
 
-    return score_play, score_hamming, score_ncd, mario_end_state
+    return obj_dict[opt.obj], bc_dict[opt.bcs[0]], bc_dict[opt.bcs[1]], mario_end_state
 
 def tb_logging(archive, itr, start_time, logdir, score, bc0, bc1, end_states):
     # TensorBoard Logging
@@ -153,7 +157,7 @@ def tb_logging(archive, itr, start_time, logdir, score, bc0, bc1, end_states):
     killed = [1 for entry in end_states if entry==2]
 
     elapsed_time = time.time() - start_time
-    writer.add_scalar('playability', score, itr)
+    writer.add_scalar('objective', score, itr)
     writer.add_scalar('behavior 0', bc0, itr)
     writer.add_scalar('behavior 1', bc1, itr)
     writer.add_scalar("completed", 100*float(sum(completed))/float(len(end_states)), itr)
@@ -322,11 +326,11 @@ if __name__ == '__main__':
 
             optimizer.tell(objectives, bcs)
 
-            playable = max(objectives)
+            score_obj = max(objectives)
             bc0 = bc0/float(len(objectives))
             bc1 = bc1/float(len(objectives))
 
-            tb_logging(archive, i, start_time, logdir, playable, bc0, bc1, end_states)
+            tb_logging(archive, i, start_time, logdir, score_obj, bc0, bc1, end_states)
 
             if i % 100 == 0:
                 #generate a heatmap
