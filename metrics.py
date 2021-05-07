@@ -215,7 +215,7 @@ def num_koopa(vec, opt):
     koopas = 0
     for row in ascii_level:
         for token in row:
-            if token in ENEMY_TOKENS or token in SPECIAL_ENEMY_TOKENS:
+            if token == "k":
                 koopas += 1
     return koopas
 
@@ -269,7 +269,7 @@ def enemy_on_stairs(vec, opt):
             continue
         else:
             for j, token in enumerate(row):
-                if token in PIPE_TOKENS and ascii_level[i+1][j] == "#":
+                if token in ENEMY_TOKENS and ascii_level[i+1][j] == "#":
                     score+=1
     
     return score
