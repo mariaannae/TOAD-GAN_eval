@@ -223,11 +223,15 @@ if __name__ == '__main__':
 
     if opt.bcs[0][1] == 1:
         bins0 = 50
+    elif opt.bcs[0] == "tpkl":
+        bins0 = 100
     else:
         bins0 = min(bc_ranges[opt.bcs[0]][1]-bc_ranges[opt.bcs[0]][0], 100)
 
     if opt.bcs[1][1] == 1:
         bins1 = 50
+    elif opt.bcs[1] == "tpkl":
+        bins1 = 100
     else:
         bins1 = min(bc_ranges[opt.bcs[1]][1]-bc_ranges[opt.bcs[1]][0], 100)
 
