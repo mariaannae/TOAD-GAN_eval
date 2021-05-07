@@ -1,6 +1,6 @@
 #import random
 from mario.level_utils import one_hot_to_ascii_level, ascii_to_one_hot_level
-from mario.tokens import ENEMY_TOKENS
+from mario.tokens import ENEMY_TOKENS, SPECIAL_ENEMY_TOKENS, PIPE_TOKENS, SKY_TOKENS
 from level_snippet_dataset_cmaes import LevelSnippetDataset
 import collections, math
 from tqdm import tqdm
@@ -200,3 +200,86 @@ def compute_kl_divergence(level_vector, opt):
     mean_kl_divergence = np.mean(kl_divergences)
     var_kl_divergence = np.std(kl_divergences)
     return mean_kl_divergence, var_kl_divergence
+
+def num_enemies(vec, opt):
+    ascii_level = one_hot_to_ascii_level(vec.detach(), opt.token_list)
+    enemies = 0
+    for row in ascii_level:
+        for token in row:
+            if token in ENEMY_TOKENS or token in SPECIAL_ENEMY_TOKENS:
+                enemies += 1
+    return enemies
+
+def num_koopa(vec, opt):
+    ascii_level = one_hot_to_ascii_level(vec.detach(), opt.token_list)
+    koopas = 0
+    for row in ascii_level:
+        for token in row:
+            if token in ENEMY_TOKENS or token in SPECIAL_ENEMY_TOKENS:
+                koopas += 1
+    return koopas
+
+def midair_pipes(vec, opt):
+    score = 0.0
+
+    ascii_level = one_hot_to_ascii_level(vec.detach(), opt.token_list)
+    for i, row in enumerate(ascii_level):
+        if i == 15:
+            continue
+        else:
+            for j, token in enumerate(row):
+                if token in PIPE_TOKENS and ascii_level[i+1][j] in SKY_TOKENS:
+                    score+=1
+    
+    return score
+
+def new_tile_types(vec, opt):
+
+    ascii_level = one_hot_to_ascii_level(vec.detach(), opt.token_list)
+
+    ref_level = []
+    path = opt.input_dir + '/' + opt.input_name
+    hamming = 0
+
+    with open(path, "r") as f:
+        for line in f:
+            ref_level.append(line)  
+    
+    token_set = set()
+
+    for row in ref_level:
+        for token in row:
+            token_set.add(token)
+
+    score = 0.0
+
+    for row in ascii_level:
+        for token in row:
+            if token not in token_set:
+                score+=1
+
+    return score
+
+def enemy_on_stairs(vec, opt):
+    score = 0.0
+
+    ascii_level = one_hot_to_ascii_level(vec.detach(), opt.token_list)
+    for i, row in enumerate(ascii_level):
+        if i == 15:
+            continue
+        else:
+            for j, token in enumerate(row):
+                if token in PIPE_TOKENS and ascii_level[i+1][j] == "#":
+                    score+=1
+    
+    return score
+
+def spiky(vec, opt):
+    ascii_level = one_hot_to_ascii_level(vec.detach(), opt.token_list)
+    score = 0.0
+    for row in ascii_level:
+        for token in row:
+            if token == 'y':
+                score+=1
+    
+    return score

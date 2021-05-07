@@ -136,23 +136,25 @@ def generate_samples_cmaes(generators, noise_maps, reals, noise_amplitudes, cmae
             ###########
             z_in = noise_amp * z_curr + I_prev
 
+            G.eval()
             #print(z_in.shape, I_prev.shape)
-            I_curr = G(z_in.detach(), I_prev, temperature=1)
+            with torch.no_grad():
+                I_curr = G(z_in.detach(), I_prev, temperature=1)
 
-            # Allow road insertion in mario kart levels
-            if opt.game == 'mariokart':
-                if current_scale == 0 and opt.seed_road is not None:
-                    for token in token_list:
-                        if token == 'R':  # Road map!
-                            tmp = opt.seed_road.clone().to(opt.device)
-                            I_curr[0, token_list.index(token)] = tmp
+                # Allow road insertion in mario kart levels
+                if opt.game == 'mariokart':
+                    if current_scale == 0 and opt.seed_road is not None:
+                        for token in token_list:
+                            if token == 'R':  # Road map!
+                                tmp = opt.seed_road.clone().to(opt.device)
+                                I_curr[0, token_list.index(token)] = tmp
 
-                        elif token in ['O', 'Q', 'C', '<']:  # Tokens that can only appear on roads
-                            I_curr[0, token_list.index(token)] *= opt.seed_road.to(opt.device)
+                            elif token in ['O', 'Q', 'C', '<']:  # Tokens that can only appear on roads
+                                I_curr[0, token_list.index(token)] *= opt.seed_road.to(opt.device)
 
-                        else:  # Other tokens like walls
-                            I_curr[0, token_list.index(token)] = torch.min(I_curr[0, token_list.index(token)],
-                                                                           1 - opt.seed_road.to(opt.device))
+                            else:  # Other tokens like walls
+                                I_curr[0, token_list.index(token)] = torch.min(I_curr[0, token_list.index(token)],
+                                                                            1 - opt.seed_road.to(opt.device))
 
             # Save all scales
             # if True:
