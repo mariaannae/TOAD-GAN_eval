@@ -88,8 +88,8 @@ def multi_fit_func(solution, device, generators, num_layer, rand_network, reals,
         
         score_new_tiles += new_tile_types(level, opt)
         score_pipes -= midair_pipes(level, opt)
-        score_koopas += num_enemies(level, opt)
-        score_enemies += num_enemies(level, opt)
+        score_koopas += num_koopa(level, opt)
+        score_enemies += num_koopa(level, opt)
         score_ncd += normalized_compression_dist(level, opt)
         score_platform -= platform_test_vec(level, opt.token_list)
         score_hamming += hamming_dist(level, opt)
@@ -157,7 +157,7 @@ def fit_func(solution, device, generators, num_layer, rand_network, reals, noise
         
         score_new_tiles += new_tile_types(level, opt)
         score_pipes -= midair_pipes(level, opt)
-        score_koopas += num_enemies(level, opt)
+        score_koopas += num_koopa(level, opt)
         score_enemies += num_enemies(level, opt)
         score_ncd += normalized_compression_dist(level, opt)
         score_platform -= platform_test_vec(level, opt.token_list)
@@ -174,9 +174,6 @@ def fit_func(solution, device, generators, num_layer, rand_network, reals, noise
     bc_dict = {"enemy_on_stairs": score_enemy_on_stairs, "spiky": score_spiky, "new_tiles": score_new_tiles, "pipes": score_pipes, "koopas": score_koopas, "enemies": score_enemies, "ncd": score_ncd, "hamming": score_hamming, "playable": score_play, "tpkl": score_kl_divergence, "time": score_time, "max_jump": score_max_jump, "n_jumps": score_jumps, "platform": score_platform}
 
     return obj_dict[opt.obj], bc_dict[opt.bcs[0]], bc_dict[opt.bcs[1]], mario_end_state
-    
-
-
  
 def tb_logging(archive, itr, start_time, logdir, score, bc0, bc1, end_states):
     # TensorBoard Logging
@@ -225,7 +222,7 @@ if __name__ == '__main__':
 
     opt = post_config(opt)
     bc_names = {"spiky": "Number of Spiky Enemies", "enemy_on_stairs": "Enemies Placed on Pyramid Blocks", "new_tiles": "Tile Types not in Reference Level", "pipes": "Midair Pipes", "koopas": "Number of Green Koopas", "enemies": "Number of Enemies", "ncd": "Normalized Compression Distance", "platform": "Platform Holes( by Tile)", "hamming": "Hamming Distance", "playable": "Percentage of Level Completed", "tpkl": "Tile Pattern KL Divergence", "time": "Time Remaining After Play", "max_jump": "Maximum Jump Width", "n_jumps": "Number of Jumps Taken", "n_enemies": "Number of Enemies", "platform": "Platform Holes(by tile)"}
-    bc_ranges = {"spiky": (0, 20), "enemy_on_stairs": (0, 30), "new_tiles": (0, 50), "pipes": (-20, 0), "koopas": (0, 100), "enemies": (0, 100), "ncd": (0, 1), "hamming": (0, 1), "playable": (0, 100), "tpkl": (0, 10), "time": (0, int(1.2e4)), "max_jump": (0, 200), "n_jumps": (0, 100), "n_enemies": (0, 50), "platform": (0, 203)}
+    bc_ranges = {"spiky": (0, 10), "enemy_on_stairs": (0, 30), "new_tiles": (0, 50), "pipes": (-20, 0), "koopas": (0, 10), "enemies": (0, 100), "ncd": (0, 1), "hamming": (0, 1), "playable": (0, 100), "tpkl": (0, 10), "time": (0, int(1.2e4)), "max_jump": (0, 200), "n_jumps": (0, 100), "n_enemies": (0, 50), "platform": (0, 203)}
     obj_names = {"pipes_and_platform": "Platform Holes and Pipes in Midair", "spiky": "Number of Spiky Enemies", "enemy_on_stairs": "Enemies Placed on Pyramid Blocks", "new_tiles": "Tile Types not in Reference Level", "pipes": "Midair Pipes", "koopas": "Number of Green Koopas", "enemies": "Number of Enemies", "ncd": "Normalized Compression Distance", "hamming": "Hamming Distance", "playable": "Percentage of Level Completed", "tpkl": "Tile Pattern KL Divergence", "unplayable": "Percentage of Level Left Incomplete After Play", "max_jump": "Maximum Jump Width", "n_jumps": "Number of Jumps Taken", "n_enemies": "Number of Enemies", "platform": "Platform Holes(by tile)"}
 
     if opt.bcs[0][1] == 1:
