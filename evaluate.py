@@ -158,7 +158,7 @@ def fit_func(solution, device, generators, num_layer, rand_network, reals, noise
         score_new_tiles += new_tile_types(level, opt)
         score_pipes -= midair_pipes(level, opt)
         score_koopas += num_koopa(level, opt)
-        score_enemies += num_enemies(level, opt)
+        score_enemies += num_koopa(level, opt)
         score_ncd += normalized_compression_dist(level, opt)
         score_platform -= platform_test_vec(level, opt.token_list)
         score_hamming += hamming_dist(level, opt)
