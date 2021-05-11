@@ -174,7 +174,7 @@ def fit_func(solution, device, generators, num_layer, rand_network, reals, noise
     bc_dict = {"enemy_on_stairs": score_enemy_on_stairs, "spiky": score_spiky, "new_tiles": score_new_tiles, "pipes": score_pipes, "koopas": score_koopas, "enemies": score_enemies, "ncd": score_ncd, "hamming": score_hamming, "playable": score_play, "tpkl": score_kl_divergence, "time": score_time, "max_jump": score_max_jump, "n_jumps": score_jumps, "platform": score_platform}
 
     return obj_dict[opt.obj], bc_dict[opt.bcs[0]], bc_dict[opt.bcs[1]], mario_end_state
- 
+     
 def tb_logging(archive, itr, start_time, logdir, score, bc0, bc1, end_states):
     # TensorBoard Logging
     
